@@ -1,39 +1,35 @@
-const mysql = require('mysql2/promise');
-const { DB_HOST, DB_PORT, DB_USER, DB_PASSWORD, DB_NAME } = require('../config/env');
+const sql = require('mssql');
+const { db: dbConfig } = require('../config/env');
 
 let pool;
 
-async function connectDB() {
+async function getPool() {
+  if (pool) return pool;
+
   try {
-    pool = mysql.createPool({
-      host: DB_HOST,
-      port: DB_PORT,
-      user: DB_USER,
-      password: DB_PASSWORD,
-      database: DB_NAME,
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
+    pool = await sql.connect({
+      user: dbConfig.user,
+      password: dbConfig.password,
+      server: dbConfig.host,
+      database: dbConfig.database,
+      port: dbConfig.port ? Number(dbConfig.port) : 1433,
+      options: {
+        encrypt: false, // usa true si el servidor requiere SSL
+        trustServerCertificate: true, // para entornos locales
+      },
+      pool: {
+        max: 10,
+        min: 0,
+        idleTimeoutMillis: 30000,
+      },
     });
-
-    // Test connection
-    const connection = await pool.getConnection();
-    console.log('🔌 Database connection pool created');
-    connection.release();
-
+    console.log('✅ SQL Server pool created');
     return pool;
-  } catch (error) {
-    console.error('❌ Database connection error:', error.message);
-    throw error;
+  } catch (err) {
+    console.error('❌ Error connecting to SQL Server:', err);
+    throw err;
   }
 }
 
-function getPool() {
-  return pool;
-}
-
-module.exports = {
-  connectDB,
-  getPool,
-};
+module.exports = { getPool };
 
