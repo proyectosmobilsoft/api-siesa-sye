@@ -1,28 +1,19 @@
 const express = require('express');
 const helmet = require('helmet');
 const morgan = require('morgan');
+
+const clientsRoutes = require('./routes/clients.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 
 const app = express();
 
-// Security middleware
 app.use(helmet());
-
-// Logging middleware
+app.use(express.json());
 app.use(morgan('dev'));
 
-// Body parsing middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-
-// Routes
-const clientsRoutes = require('./routes/clients.routes');
 app.use('/api/clients', clientsRoutes);
 
-// 404 handler (must be after all routes)
 app.use(notFound);
-
-// Error handling middleware (must be last)
 app.use(errorHandler);
 
 module.exports = app;
