@@ -16,7 +16,8 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Routes
-// TODO: Add routes here
+const clientsRoutes = require('./routes/clients.routes');
+app.use('/api/clients', clientsRoutes);
 
 // Error handling middleware (must be last)
 app.use(errorHandler);

@@ -1,17 +1,25 @@
 const { getPool } = require('../db/db');
 
-exports.getAllClients = async () => {
+async function getAllClients() {
   const pool = await getPool();
-  const request = pool.request();
-  const result = await request.query('SELECT * FROM clients');
-  return result.recordset;
-};
 
-exports.getClientById = async (id) => {
-  const pool = await getPool();
-  const request = pool.request();
-  request.input('id', id);
-  const result = await request.query('SELECT * FROM clients WHERE id = @id');
-  return result.recordset[0];
-};
+  const query = `
+    SELECT TOP 100
+      f9740_id,
+      f9740_nit,
+      f9740_razon_social,
+      f9740_nombre,
+      f9740_email,
+      f9740_celular,
+      f9740_direccion1
+    FROM f9740
+    WHERE f9740_ind_estado = 1
+    ORDER BY f9740_id DESC
+  `;
+
+  const result = await pool.request().query(query);
+  return result.recordset;
+}
+
+module.exports = { getAllClients };
 
