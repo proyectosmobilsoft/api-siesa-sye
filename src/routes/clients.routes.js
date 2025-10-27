@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const { getAllClients } = require('../controllers/clients.controller');
+const { getClients } = require('../controllers/clients.controller');
 
 // GET /api/clients
-router.get('/', getAllClients);
+router.get('/', getClients);
 
 module.exports = router;
 

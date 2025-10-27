@@ -1,11 +1,13 @@
 const clientsService = require('../services/clients.service');
 
-exports.getAllClients = async (req, res, next) => {
+async function getClients(req, res, next) {
   try {
     const clients = await clientsService.getAllClients();
-    res.json(clients);
-  } catch (error) {
-    next(error);
+    res.json({ success: true, data: clients });
+  } catch (err) {
+    next(err);
   }
-};
+}
+
+module.exports = { getClients };
 
