@@ -4,6 +4,7 @@ const morgan = require('morgan');
 
 const clientsRoutes = require('./routes/clients.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
+const { setupSwagger } = require('./config/swagger');
 
 const app = express();
 
@@ -11,6 +12,10 @@ app.use(helmet());
 app.use(express.json());
 app.use(morgan('dev'));
 
+// 📘 Swagger UI
+setupSwagger(app);
+
+// Rutas principales
 app.use('/api/clients', clientsRoutes);
 
 app.use(notFound);
