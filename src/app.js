@@ -3,6 +3,7 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 
 const clientsRoutes = require('./routes/clients.routes');
+const companiesRoutes = require('./routes/companies.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -17,6 +18,7 @@ setupSwagger(app);
 
 // Rutas principales
 app.use('/api/clients', clientsRoutes);
+app.use('/api/companies', companiesRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
