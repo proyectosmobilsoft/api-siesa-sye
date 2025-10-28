@@ -4,6 +4,7 @@ const morgan = require('morgan');
 
 const clientsRoutes = require('./routes/clients.routes');
 const companiesRoutes = require('./routes/companies.routes');
+const productsRoutes = require('./routes/products.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -19,6 +20,7 @@ setupSwagger(app);
 // Rutas principales
 app.use('/api/clients', clientsRoutes);
 app.use('/api/companies', companiesRoutes);
+app.use('/api/products', productsRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
