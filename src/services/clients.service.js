@@ -12,7 +12,7 @@ async function getAllClients() {
       f9740_email,
       f9740_celular,
       f9740_direccion1
-    FROM f9740
+    FROM t9740_pdv_clientes
     WHERE f9740_ind_estado = 1
     ORDER BY f9740_id DESC
   `;
