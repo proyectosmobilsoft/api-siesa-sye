@@ -97,6 +97,54 @@ const clientsController = require('../controllers/clients.controller');
  *           items:
  *             $ref: '#/components/schemas/SalesByClient'
  *           description: Lista de ventas por cliente
+ *     Top10Client:
+ *       type: object
+ *       properties:
+ *         ID Cliente:
+ *           type: integer
+ *           description: ID único del cliente
+ *           example: 12345
+ *         Ventas Netas:
+ *           type: number
+ *           format: double
+ *           description: Suma de ventas netas del cliente
+ *           example: 2500000.75
+ *     Top10ClientsResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           description: Indica si la operación fue exitosa
+ *           example: true
+ *         data:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/Top10Client'
+ *           description: Lista de los 10 clientes con mayores ventas
+ *     NewVsRecurrentClient:
+ *       type: object
+ *       properties:
+ *         Tipo Cliente:
+ *           type: string
+ *           description: Tipo de cliente - Nuevo o Recurrente
+ *           enum: [Clientes Nuevos, Clientes Recurrentes]
+ *           example: "Clientes Nuevos"
+ *         Cantidad Clientes:
+ *           type: integer
+ *           description: Cantidad de clientes de ese tipo
+ *           example: 150
+ *     NewVsRecurrentClientsResponse:
+ *       type: object
+ *       properties:
+ *         success:
+ *           type: boolean
+ *           description: Indica si la operación fue exitosa
+ *           example: true
+ *         data:
+ *           type: array
+ *           items:
+ *             $ref: '#/components/schemas/NewVsRecurrentClient'
+ *           description: Análisis de clientes nuevos vs recurrentes
  */
 
 /**
@@ -185,8 +233,132 @@ const clientsController = require('../controllers/clients.controller');
  *                   type: string
  *                   example: "Error al obtener el reporte de ventas"
  */
+/**
+ * @swagger
+ * /api/clients/top-10:
+ *   get:
+ *     summary: Obtener top 10 clientes del mes
+ *     description: Retorna los 10 clientes con mayores ventas netas, ordenados de forma descendente. Si se proporciona el parámetro yearMonth, filtra por ese mes específico.
+ *     tags: [Clientes]
+ *     parameters:
+ *       - in: query
+ *         name: yearMonth
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         example: 202510
+ *         description: Año y mes en formato YYYYMM. Ejemplo 202510 para octubre 2025. Si no se proporciona, se obtienen todos los meses disponibles.
+ *       - in: query
+ *         name: companyId
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         default: 1
+ *         description: ID de la compañía. Por defecto es 1.
+ *     responses:
+ *       200:
+ *         description: Top 10 clientes obtenido exitosamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/Top10ClientsResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - ID Cliente: 12345
+ *                   Ventas Netas: 2500000.75
+ *                 - ID Cliente: 67890
+ *                   Ventas Netas: 1800000.50
+ *                 - ID Cliente: 11111
+ *                   Ventas Netas: 1500000.00
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Error al obtener el top 10 de clientes"
+ */
+/**
+ * @swagger
+ * /api/clients/new-vs-recurrent:
+ *   get:
+ *     summary: Analizar clientes nuevos vs recurrentes
+ *     description: Compara los clientes del mes actual con el mes anterior para identificar cuáles son nuevos y cuáles son recurrentes. Si no se proporciona previousMonth, se calcula automáticamente como el mes previo al currentMonth.
+ *     tags: [Clientes]
+ *     parameters:
+ *       - in: query
+ *         name: currentMonth
+ *         required: true
+ *         schema:
+ *           type: integer
+ *         example: 201902
+ *         description: Mes actual en formato YYYYMM. Ejemplo 201902 para febrero 2019. Este parámetro es obligatorio.
+ *       - in: query
+ *         name: previousMonth
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         example: 201901
+ *         description: Mes previo en formato YYYYMM. Ejemplo 201901 para enero 2019. Si no se proporciona, se calcula automáticamente restando 1 mes del currentMonth.
+ *       - in: query
+ *         name: companyId
+ *         required: false
+ *         schema:
+ *           type: integer
+ *         default: 1
+ *         description: ID de la compañía. Por defecto es 1.
+ *     responses:
+ *       200:
+ *         description: Análisis de clientes obtenido exitosamente.
+ *         content:
+ *           application/json:
+ *             schema:
+ *               $ref: '#/components/schemas/NewVsRecurrentClientsResponse'
+ *             example:
+ *               success: true
+ *               data:
+ *                 - Tipo Cliente: "Clientes Nuevos"
+ *                   Cantidad Clientes: 150
+ *                 - Tipo Cliente: "Clientes Recurrentes"
+ *                   Cantidad Clientes: 320
+ *       400:
+ *         description: Parámetro requerido faltante
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "El parámetro currentMonth es requerido (formato YYYYMM)"
+ *       500:
+ *         description: Error interno del servidor
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 error:
+ *                   type: string
+ *                   example: "Error al obtener el análisis de clientes"
+ */
 router.get('/', clientsController.getClients);
 router.get('/sales-report', clientsController.getSalesByClient);
+router.get('/top-10', clientsController.getTop10Clients);
+router.get('/new-vs-recurrent', clientsController.getNewVsRecurrentClients);
 
 module.exports = router;
 
