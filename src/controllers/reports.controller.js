@@ -27,4 +27,40 @@ async function getVendors(req, res, next) {
   }
 }
 
-module.exports = { getDailyOrders, getSalesSummary, getVendors };
+async function getMonthlySalesTrend(req, res, next) {
+  try {
+    const { companyId } = req.query;
+    const trend = await reportsService.getMonthlySalesTrend(
+      companyId ? parseInt(companyId) : 1
+    );
+    res.json({ success: true, data: trend });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getYearOverYearComparison(req, res, next) {
+  try {
+    const { companyId } = req.query;
+    const comparison = await reportsService.getYearOverYearComparison(
+      companyId ? parseInt(companyId) : 1
+    );
+    res.json({ success: true, data: comparison });
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function getMonthOverMonthComparison(req, res, next) {
+  try {
+    const { companyId } = req.query;
+    const comparison = await reportsService.getMonthOverMonthComparison(
+      companyId ? parseInt(companyId) : 1
+    );
+    res.json({ success: true, data: comparison });
+  } catch (err) {
+    next(err);
+  }
+}
+
+module.exports = { getDailyOrders, getSalesSummary, getVendors, getMonthlySalesTrend, getYearOverYearComparison, getMonthOverMonthComparison };
