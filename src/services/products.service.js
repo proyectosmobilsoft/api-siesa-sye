@@ -4,7 +4,7 @@ async function getAllProducts() {
   const pool = await getPool();
 
   const query = `
-    SELECT TOP 100
+    SELECT
       f120_ts,
       f120_id_cia,
       f120_id,

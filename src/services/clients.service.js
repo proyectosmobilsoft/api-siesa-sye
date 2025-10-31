@@ -4,7 +4,7 @@ async function getAllClients() {
   const pool = await getPool();
 
   const query = `
-    SELECT TOP 100
+    SELECT
       f9740_id,
       f9740_nit,
       f9740_razon_social,

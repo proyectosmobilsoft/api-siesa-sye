@@ -4,7 +4,7 @@ async function getAllCompanies() {
   const pool = await getPool();
 
   const query = `
-    SELECT TOP 100
+    SELECT
       f010_id,
       f010_razon_social,
       f010_nit,
