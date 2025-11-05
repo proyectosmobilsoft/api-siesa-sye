@@ -7,6 +7,7 @@ const companiesRoutes = require('./routes/companies.routes');
 const productsRoutes = require('./routes/products.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const warehousesRoutes = require('./routes/warehouses.routes');
+const facturaRoutes = require('./routes/factura.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -25,6 +26,7 @@ app.use('/api/companies', companiesRoutes);
 app.use('/api/products', productsRoutes);
 app.use('/api/reports', reportsRoutes);
 app.use('/api/warehouses', warehousesRoutes);
+app.use('/api/factura', facturaRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

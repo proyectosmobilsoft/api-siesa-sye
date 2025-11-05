@@ -16,12 +16,16 @@ async function getPool() {
       options: {
         encrypt: false, // usa true si el servidor requiere SSL
         trustServerCertificate: true, // para entornos locales
+        requestTimeout: 120000, // Timeout de 120 segundos para consultas complejas
+        enableArithAbort: true, // Mejora el rendimiento
       },
       pool: {
         max: 10,
         min: 0,
         idleTimeoutMillis: 30000,
+        acquireTimeoutMillis: 60000, // Timeout para adquirir conexión
       },
+      connectionTimeout: 30000 // Timeout de conexión inicial
     });
     console.log('✅ SQL Server pool created');
     return pool;
