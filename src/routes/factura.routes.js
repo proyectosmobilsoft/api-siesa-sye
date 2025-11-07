@@ -13,6 +13,10 @@ const facturaController = require('../controllers/factura.controller');
  *           type: integer
  *           description: ID de la compañía
  *           example: 1
+ *         Nombre Compañía:
+ *           type: string
+ *           description: Razón social de la compañía
+ *           example: "CI DISTRIBUCIONES SYE S.A.S."
  *         Código Cuenta:
  *           type: string
  *           description: Código de la cuenta auxiliar
@@ -82,16 +86,19 @@ const facturaController = require('../controllers/factura.controller');
  *               success: true
  *               data:
  *                 - Compañía: 1
+ *                   "Nombre Compañía": "CI DISTRIBUCIONES SYE S.A.S."
  *                   "Código Cuenta": "110505"
  *                   "Nombre de la Cuenta": "Caja General"
  *                   "Total Cuenta": 15000000.50
  *                   "Tipo de Saldo": "Deudor"
  *                 - Compañía: 1
+ *                   "Nombre Compañía": "CI DISTRIBUCIONES SYE S.A.S."
  *                   "Código Cuenta": "210505"
  *                   "Nombre de la Cuenta": "Proveedores Nacionales"
  *                   "Total Cuenta": -12000000.25
  *                   "Tipo de Saldo": "Acreedor"
  *                 - Compañía: 1
+ *                   "Nombre Compañía": "CI DISTRIBUCIONES SYE S.A.S."
  *                   "Código Cuenta": "411505"
  *                   "Nombre de la Cuenta": "Ingresos por Ventas"
  *                   "Total Cuenta": 9500000.75

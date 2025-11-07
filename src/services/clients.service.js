@@ -3,21 +3,30 @@ const { getPool } = require('../db/db');
 async function getAllClients() {
   const pool = await getPool();
 
+  const request = pool.request();
+  // Aumentar timeout a 60 segundos para consultas complejas
+  request.timeout = 60000;
+
+  // Consulta optimizada usando t200_mm_terceros con WITH (NOLOCK)
+  // Nota: Se recomienda crear índice en f200_ind_cliente y f200_ind_estado si no existen
   const query = `
     SELECT
-      f9740_id,
-      f9740_nit,
-      f9740_razon_social,
-      f9740_nombre,
-      f9740_email,
-      f9740_celular,
-      f9740_direccion1
-    FROM t9740_pdv_clientes
-    WHERE f9740_ind_estado = 1
-    ORDER BY f9740_id DESC
+      f200_rowid AS f9740_id,
+      f200_nit AS f9740_nit,
+      f200_razon_social AS f9740_razon_social,
+      COALESCE(
+        NULLIF(LTRIM(RTRIM(ISNULL(f200_nombres, '') + ' ' + ISNULL(f200_apellido1, '') + ' ' + ISNULL(f200_apellido2, ''))), ''),
+        f200_nombre_est,
+        f200_razon_social
+      ) AS f9740_nombre,
+      NULL AS f9740_email,
+      NULL AS f9740_celular,
+      NULL AS f9740_direccion1
+    FROM t200_mm_terceros WITH (NOLOCK)
+    ORDER BY f200_rowid DESC
   `;
 
-  const result = await pool.request().query(query);
+  const result = await request.query(query);
   return result.recordset;
 }
 

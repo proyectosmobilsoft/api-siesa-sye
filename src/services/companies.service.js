@@ -3,6 +3,12 @@ const { getPool } = require('../db/db');
 async function getAllCompanies() {
   const pool = await getPool();
 
+  const request = pool.request();
+  // Aumentar timeout a 60 segundos para consultas complejas
+  request.timeout = 60000;
+
+  // Consulta optimizada con WITH (NOLOCK)
+  // Nota: Se recomienda crear índice en f010_ind_estado si no existe
   const query = `
     SELECT
       f010_id,
@@ -99,12 +105,12 @@ async function getAllCompanies() {
       f010_cant_anual_uvt_pago_efe,
       f010_ind_imp_co_movto_cmp,
       f010_ind_concil_sin_acum_pos
-    FROM t010_mm_companias
+    FROM t010_mm_companias WITH (NOLOCK)
     WHERE f010_ind_estado = 1
     ORDER BY f010_id DESC
   `;
 
-  const result = await pool.request().query(query);
+  const result = await request.query(query);
   return result.recordset;
 }
 

@@ -4,14 +4,22 @@ async function getEstadosFinancieros(periodoInicial = 202401, periodoFinal = 202
   const pool = await getPool();
 
   const request = pool.request();
-  // Aumentar timeout a 60 segundos para consultas complejas
-  request.timeout = 60000;
+  // Aumentar timeout a 120 segundos para consultas complejas
+  request.timeout = 120000;
   request.input('periodoInicial', require('mssql').Int, periodoInicial);
   request.input('periodoFinal', require('mssql').Int, periodoFinal);
 
+  // Consulta optimizada con WITH (NOLOCK) y filtros mejorados
+  // Nota: Se recomienda crear índices en:
+  // - BI_T350.f_perido_docto
+  // - BI_T350.f_auxiliar
+  // - t253_co_auxiliares.f253_id
+  // - t253_co_auxiliares.f253_id_cia
+  // - t010_mm_companias.f010_id
   const query = `
     SELECT 
       a.f253_id_cia                                AS [Compañía],
+      c.f010_razon_social                          AS [Nombre Compañía],
       a.f253_id                                    AS [Código Cuenta],
       a.f253_descripcion                           AS [Nombre de la Cuenta],
       SUM(b.f_valor_neto)                          AS [Total Cuenta],
@@ -21,14 +29,19 @@ async function getEstadosFinancieros(periodoInicial = 202401, periodoFinal = 202
         ELSE 'Saldo Cero'
       END AS [Tipo de Saldo]
     FROM 
-      BI_T350 b
+      BI_T350 b WITH (NOLOCK)
     INNER JOIN 
-      t253_co_auxiliares a
+      t253_co_auxiliares a WITH (NOLOCK)
         ON a.f253_id = b.f_auxiliar
+    INNER JOIN 
+      t010_mm_companias c WITH (NOLOCK)
+        ON c.f010_id = a.f253_id_cia
     WHERE 
-      b.f_perido_docto BETWEEN @periodoInicial AND @periodoFinal
+      b.f_perido_docto >= @periodoInicial 
+      AND b.f_perido_docto <= @periodoFinal
     GROUP BY 
       a.f253_id_cia,
+      c.f010_razon_social,
       a.f253_id,
       a.f253_descripcion
     ORDER BY 
@@ -72,7 +85,6 @@ async function getFacturas(periodoInicial = 202401, periodoFinal = 202412, limit
     FROM BI_T350 WITH (NOLOCK)
     WHERE f_perido_docto >= @periodoInicial 
       AND f_perido_docto <= @periodoFinal
-      AND f_desc_tipo_docto LIKE '%Factura%'
     ORDER BY f_fecha_docto DESC
     OFFSET @offset ROWS
     FETCH NEXT @limit ROWS ONLY
