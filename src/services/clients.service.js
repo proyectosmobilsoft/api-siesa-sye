@@ -1,33 +1,91 @@
 const { getPool } = require('../db/db');
 
-async function getAllClients() {
+async function getAllClients(page = null, pageSize = null, search = null) {
   const pool = await getPool();
 
   const request = pool.request();
-  // Aumentar timeout a 60 segundos para consultas complejas
-  request.timeout = 60000;
+  // Timeout estándar de 30 segundos
+  request.timeout = 30000;
 
   // Consulta optimizada usando t200_mm_terceros con WITH (NOLOCK)
-  // Nota: Se recomienda crear índice en f200_ind_cliente y f200_ind_estado si no existen
+  // IMPORTANTE: Para mejorar el rendimiento, crear un índice compuesto:
+  // CREATE NONCLUSTERED INDEX IX_t200_tipo_tercero_rowid ON t200_mm_terceros (f200_ind_tipo_tercero, f200_rowid DESC)
+  
+  let paginationClause = '';
+  if (page && pageSize) {
+    const offset = (page - 1) * pageSize;
+    paginationClause = `OFFSET ${offset} ROWS FETCH NEXT ${pageSize} ROWS ONLY`;
+  }
+
+  // Construir filtro de búsqueda
+  let searchFilter = '';
+  if (search && search.trim() !== '') {
+    const searchTerm = `%${search.trim()}%`;
+    request.input('searchTerm', searchTerm);
+    searchFilter = `AND f200_razon_social LIKE @searchTerm`;
+  }
+
   const query = `
     SELECT
       f200_rowid AS f9740_id,
       f200_nit AS f9740_nit,
       f200_razon_social AS f9740_razon_social,
-      COALESCE(
-        NULLIF(LTRIM(RTRIM(ISNULL(f200_nombres, '') + ' ' + ISNULL(f200_apellido1, '') + ' ' + ISNULL(f200_apellido2, ''))), ''),
-        f200_nombre_est,
-        f200_razon_social
-      ) AS f9740_nombre,
+      CASE 
+        WHEN LTRIM(RTRIM(ISNULL(f200_nombres, '') + ' ' + ISNULL(f200_apellido1, '') + ' ' + ISNULL(f200_apellido2, ''))) <> ''
+          THEN LTRIM(RTRIM(ISNULL(f200_nombres, '') + ' ' + ISNULL(f200_apellido1, '') + ' ' + ISNULL(f200_apellido2, '')))
+        WHEN f200_nombre_est IS NOT NULL AND f200_nombre_est <> ''
+          THEN f200_nombre_est
+        ELSE f200_razon_social
+      END AS f9740_nombre,
       NULL AS f9740_email,
       NULL AS f9740_celular,
       NULL AS f9740_direccion1
     FROM t200_mm_terceros WITH (NOLOCK)
+    WHERE f200_ind_tipo_tercero = 1
+    ${searchFilter}
     ORDER BY f200_rowid DESC
+    ${paginationClause}
   `;
 
   const result = await request.query(query);
-  return result.recordset;
+  
+  // Siempre obtener el total de registros con el mismo filtro de búsqueda
+  const countRequest = pool.request();
+  if (search && search.trim() !== '') {
+    const searchTerm = `%${search.trim()}%`;
+    countRequest.input('searchTerm', searchTerm);
+  }
+  
+  const countQuery = `
+    SELECT COUNT(*) AS total
+    FROM t200_mm_terceros WITH (NOLOCK)
+    WHERE f200_ind_tipo_tercero = 1
+    ${searchFilter}
+  `;
+  const countResult = await countRequest.query(countQuery);
+  const total = countResult.recordset[0].total;
+  
+  // Si hay paginación, retornar información completa de paginación
+  if (page && pageSize) {
+    const totalPages = Math.ceil(total / pageSize);
+    
+    return {
+      data: result.recordset,
+      total: total,
+      pagination: {
+        page: parseInt(page),
+        pageSize: parseInt(pageSize),
+        total: total,
+        totalPages: totalPages
+      }
+    };
+  }
+  
+  // Sin paginación, retornar solo el total
+  return {
+    data: result.recordset,
+    total: total
+  };
 }
 
 async function getSalesByClient(yearMonth = null, companyId = 1) {

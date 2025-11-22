@@ -2,8 +2,26 @@ const clientsService = require('../services/clients.service');
 
 async function getClients(req, res, next) {
   try {
-    const clients = await clientsService.getAllClients();
-    res.json({ success: true, data: clients });
+    const { page, pageSize, search } = req.query;
+    const pageNum = page ? parseInt(page) : null;
+    // Si se proporciona page pero no pageSize, usar 100 por defecto
+    const pageSizeNum = pageSize ? parseInt(pageSize) : (pageNum ? 100 : null);
+    const searchTerm = search ? search.trim() : null;
+    
+    const result = await clientsService.getAllClients(pageNum, pageSizeNum, searchTerm);
+    
+    // Retornar siempre con total, y paginación si existe
+    const response = {
+      success: true,
+      data: result.data,
+      total: result.total
+    };
+    
+    if (result.pagination) {
+      response.pagination = result.pagination;
+    }
+    
+    res.json(response);
   } catch (err) {
     next(err);
   }

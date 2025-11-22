@@ -52,40 +52,47 @@ async function getEstadosFinancieros(periodoInicial = 202401, periodoFinal = 202
   return result.recordset;
 }
 
-async function getFacturas(periodoInicial = 202401, periodoFinal = 202412, limit = 1000, offset = 0) {
+async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
   const pool = await getPool();
 
   const request = pool.request();
   // Aumentar timeout a 120 segundos para consultas complejas
   request.timeout = 120000;
-  request.input('periodoInicial', require('mssql').Int, periodoInicial);
-  request.input('periodoFinal', require('mssql').Int, periodoFinal);
   request.input('limit', require('mssql').Int, limit);
   request.input('offset', require('mssql').Int, offset);
 
+  // Construir filtro opcional por tercero
+  let terceroFilter = '';
+  if (idTercero) {
+    request.input('idTercero', require('mssql').Int, idTercero);
+    terceroFilter = 'AND d.f350_rowid_tercero = @idTercero';
+  }
+
   // Consulta optimizada con OFFSET/FETCH para paginación eficiente
   // Nota: Se recomienda crear índices en:
-  // - BI_T350.f_perido_docto
-  // - BI_T350.f_desc_tipo_docto
-  // - BI_T350.f_fecha_docto (para ORDER BY)
+  // - t350_co_docto_contable.f350_id_tipo_docto
+  // - t350_co_docto_contable.f350_rowid_tercero
+  // - t350_co_docto_contable.f350_fecha (para ORDER BY)
   const query = `
     SELECT 
-      f_cia AS IdCompania,
-      f_docto AS NumeroFactura,
-      f_fecha_docto AS FechaFactura,
-      f_tercero_docto AS IdTercero,
-      f_tercero_docto_razon_soc AS NombreCliente,
-      f_desc_tipo_docto AS TipoDocumento,
-      f_auxiliar AS CodigoCuenta,
-      f_desc_auxiliar AS NombreCuenta,
-      f_valor_debito AS ValorDebito,
-      f_valor_credito AS ValorCredito,
-      f_valor_neto AS ValorNeto,
-      f_perido_docto AS PeriodoContable
-    FROM BI_T350 WITH (NOLOCK)
-    WHERE f_perido_docto >= @periodoInicial 
-      AND f_perido_docto <= @periodoFinal
-    ORDER BY f_fecha_docto DESC
+      d.f350_id_cia AS IdCompania,
+      ISNULL(d.f350_prefijo + '-', '') + CAST(d.f350_consec_docto AS VARCHAR) AS NumeroFactura,
+      d.f350_fecha AS FechaFactura,
+      d.f350_rowid_tercero AS IdTercero,
+      ISNULL(t.f200_razon_social, '') AS NombreCliente,
+      d.f350_id_tipo_docto AS TipoDocumento,
+      NULL AS CodigoCuenta,
+      NULL AS NombreCuenta,
+      d.f350_total_db AS ValorDebito,
+      d.f350_total_cr AS ValorCredito,
+      (d.f350_total_db - d.f350_total_cr) AS ValorNeto,
+      d.f350_id_periodo AS PeriodoContable
+    FROM t350_co_docto_contable d WITH (NOLOCK)
+    LEFT JOIN t200_mm_terceros t WITH (NOLOCK)
+      ON t.f200_rowid = d.f350_rowid_tercero
+    WHERE (d.f350_id_tipo_docto LIKE '%FV%' OR d.f350_id_tipo_docto LIKE '%FC%' OR d.f350_id_tipo_docto LIKE '%Factura%')
+      ${terceroFilter}
+    ORDER BY d.f350_fecha DESC
     OFFSET @offset ROWS
     FETCH NEXT @limit ROWS ONLY
   `;
@@ -95,20 +102,24 @@ async function getFacturas(periodoInicial = 202401, periodoFinal = 202412, limit
 }
 
 // Función para obtener el total de registros (para paginación)
-async function getFacturasCount(periodoInicial = 202401, periodoFinal = 202412) {
+async function getFacturasCount(idTercero = null) {
   const pool = await getPool();
 
   const request = pool.request();
   request.timeout = 60000;
-  request.input('periodoInicial', require('mssql').Int, periodoInicial);
-  request.input('periodoFinal', require('mssql').Int, periodoFinal);
+
+  // Construir filtro opcional por tercero
+  let terceroFilter = '';
+  if (idTercero) {
+    request.input('idTercero', require('mssql').Int, idTercero);
+    terceroFilter = 'AND d.f350_rowid_tercero = @idTercero';
+  }
 
   const query = `
     SELECT COUNT(*) AS Total
-    FROM BI_T350 WITH (NOLOCK)
-    WHERE f_perido_docto >= @periodoInicial 
-      AND f_perido_docto <= @periodoFinal
-      AND f_desc_tipo_docto LIKE '%Factura%'
+    FROM t350_co_docto_contable d WITH (NOLOCK)
+    WHERE (d.f350_id_tipo_docto LIKE '%FV%' OR d.f350_id_tipo_docto LIKE '%FC%' OR d.f350_id_tipo_docto LIKE '%Factura%')
+      ${terceroFilter}
   `;
 
   const result = await request.query(query);

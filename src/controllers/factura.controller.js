@@ -15,37 +15,45 @@ async function getEstadosFinancieros(req, res, next) {
 
 async function getFacturas(req, res, next) {
   try {
-    const { periodoInicial, periodoFinal, page, pageSize } = req.query;
+    const { page, pageSize, id_tercero } = req.query;
     
-    // Paginación: por defecto 1000 registros, máximo 5000
-    const limit = Math.min(pageSize ? parseInt(pageSize) : 1000, 5000);
-    const pageNumber = page ? Math.max(1, parseInt(page)) : 1;
-    const offset = (pageNumber - 1) * limit;
+    // Paginación: por defecto 100 registros cuando se proporciona page, máximo 5000
+    const pageNumber = page ? Math.max(1, parseInt(page)) : null;
+    const limit = pageSize ? Math.min(parseInt(pageSize), 5000) : (pageNumber ? 100 : 1000);
+    const offset = pageNumber ? (pageNumber - 1) * limit : 0;
+
+    // Convertir id_tercero a integer si se proporciona
+    const idTercero = id_tercero ? parseInt(id_tercero) : null;
 
     // Obtener facturas y total en paralelo
     const [facturas, total] = await Promise.all([
       facturaService.getFacturas(
-        periodoInicial ? parseInt(periodoInicial) : undefined,
-        periodoFinal ? parseInt(periodoFinal) : undefined,
         limit,
-        offset
+        offset,
+        idTercero
       ),
       facturaService.getFacturasCount(
-        periodoInicial ? parseInt(periodoInicial) : undefined,
-        periodoFinal ? parseInt(periodoFinal) : undefined
+        idTercero
       )
     ]);
 
-    res.json({ 
+    const response = {
       success: true, 
       data: facturas,
-      pagination: {
+      total: total
+    };
+
+    // Si hay paginación, agregar información de paginación
+    if (pageNumber) {
+      response.pagination = {
         page: pageNumber,
         pageSize: limit,
         total: total,
         totalPages: Math.ceil(total / limit)
-      }
-    });
+      };
+    }
+
+    res.json(response);
   } catch (err) {
     next(err);
   }

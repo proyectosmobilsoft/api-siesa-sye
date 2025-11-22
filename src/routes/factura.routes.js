@@ -190,8 +190,13 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *           items:
  *             $ref: '#/components/schemas/Factura'
  *           description: Lista de facturas filtradas por periodo
+ *         total:
+ *           type: integer
+ *           description: Total de registros que cumplen con los filtros (siempre presente)
+ *           example: 5000
  *         pagination:
  *           type: object
+ *           description: Información de paginación (solo si se usan parámetros page y pageSize)
  *           properties:
  *             page:
  *               type: integer
@@ -200,7 +205,7 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *             pageSize:
  *               type: integer
  *               description: Tamaño de página
- *               example: 1000
+ *               example: 100
  *             total:
  *               type: integer
  *               description: Total de registros
@@ -208,7 +213,7 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *             totalPages:
  *               type: integer
  *               description: Total de páginas
- *               example: 5
+ *               example: 50
  */
 
 /**
@@ -216,35 +221,23 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  * /api/factura/facturas:
  *   get:
  *     summary: Obtener listado de facturas
- *     description: Retorna el listado de facturas filtradas por periodo contable, ordenadas por fecha de factura de forma descendente. Solo incluye documentos tipo factura. Incluye paginación para optimizar el rendimiento. Por defecto retorna 1000 registros por página.
+ *     description: Retorna el listado de facturas ordenadas por fecha de factura de forma descendente. Solo incluye documentos tipo factura. Soporta filtro opcional por tercero y paginación para optimizar el rendimiento. Si se proporciona page sin pageSize, se usará pageSize=100 por defecto.
  *     tags: [Factura]
  *     parameters:
  *       - in: query
- *         name: periodoInicial
+ *         name: id_tercero
  *         required: false
  *         schema:
  *           type: integer
- *           format: YYYYMM
- *         default: 202401
- *         description: Periodo inicial en formato YYYYMM (año-mes). Por defecto es 202401.
- *         example: 202401
- *       - in: query
- *         name: periodoFinal
- *         required: false
- *         schema:
- *           type: integer
- *           format: YYYYMM
- *         default: 202412
- *         description: Periodo final en formato YYYYMM (año-mes). Por defecto es 202412.
- *         example: 202412
+ *         description: ID del tercero (rowid) para filtrar facturas. Si se proporciona, solo retorna facturas de ese tercero específico.
+ *         example: 12345
  *       - in: query
  *         name: page
  *         required: false
  *         schema:
  *           type: integer
  *           minimum: 1
- *         default: 1
- *         description: Número de página para paginación. Por defecto es 1.
+ *         description: Número de página para paginación. Si se proporciona sin pageSize, se usará pageSize=100 por defecto.
  *         example: 1
  *       - in: query
  *         name: pageSize
@@ -253,9 +246,9 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *           type: integer
  *           minimum: 1
  *           maximum: 5000
- *         default: 1000
- *         description: Cantidad de registros por página. Por defecto es 1000, máximo 5000.
- *         example: 1000
+ *           default: 100
+ *         description: Cantidad de registros por página. Valor por defecto 100 cuando se proporciona page. Máximo 5000.
+ *         example: 100
  *     responses:
  *       200:
  *         description: Listado de facturas obtenido exitosamente.
@@ -290,11 +283,12 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *                   ValorCredito: 0.00
  *                   ValorNeto: 850000.00
  *                   PeriodoContable: 202403
+ *               total: 5000
  *               pagination:
  *                 page: 1
- *                 pageSize: 1000
+ *                 pageSize: 100
  *                 total: 5000
- *                 totalPages: 5
+ *                 totalPages: 50
  *       500:
  *         description: Error interno del servidor
  *         content:

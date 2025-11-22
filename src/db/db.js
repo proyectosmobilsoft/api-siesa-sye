@@ -30,7 +30,12 @@ async function getPool() {
     console.log('✅ SQL Server pool created');
     return pool;
   } catch (err) {
-    console.error('❌ Error connecting to SQL Server:', err);
+    console.error('❌ Error connecting to SQL Server:', {
+      message: err.message,
+      code: err.code,
+      originalError: err.originalError,
+      stack: err.stack
+    });
     throw err;
   }
 }

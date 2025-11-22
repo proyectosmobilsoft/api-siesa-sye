@@ -37,7 +37,7 @@ const clientsController = require('../controllers/clients.controller');
  *           type: string
  *           description: Dirección principal del cliente
  *           example: "Calle 123 #45-67"
- *     ClientsResponse:
+ *          ClientsResponse:
  *       type: object
  *       properties:
  *         success:
@@ -49,6 +49,30 @@ const clientsController = require('../controllers/clients.controller');
  *           items:
  *             $ref: '#/components/schemas/Client'
  *           description: Lista de clientes
+ *         total:
+ *           type: integer
+ *           description: Total de registros que cumplen con el filtro (siempre presente)
+ *           example: 5000
+ *         pagination:
+ *           type: object
+ *           description: Información de paginación (solo si se usan parámetros page y pageSize)
+ *           properties:
+ *             page:
+ *               type: integer
+ *               description: Página actual
+ *               example: 1
+ *             pageSize:
+ *               type: integer
+ *               description: Tamaño de página
+ *               example: 100
+ *             total:
+ *               type: integer
+ *               description: Total de registros
+ *               example: 5000
+ *             totalPages:
+ *               type: integer
+ *               description: Total de páginas
+ *               example: 50
  *     SalesByClient:
  *       type: object
  *       properties:
@@ -152,8 +176,34 @@ const clientsController = require('../controllers/clients.controller');
  * /api/clients:
  *   get:
  *     summary: Obtener todos los clientes
- *     description: Retorna la lista de clientes activos desde la base de datos SQL Server.
+ *     description: Retorna la lista de clientes activos desde la base de datos SQL Server. Filtra por tipo de tercero = 1. Soporta búsqueda por razón social y paginación opcional para mejorar el rendimiento con grandes volúmenes de datos.
  *     tags: [Clientes]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *         description: Número de página para paginación. Si se proporciona sin pageSize, se usará pageSize=100 por defecto.
+ *         example: 1
+ *       - in: query
+ *         name: pageSize
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           minimum: 1
+ *           maximum: 1000
+ *           default: 100
+ *         description: Cantidad de registros por página. Valor por defecto 100 cuando se proporciona page. Máximo 1000.
+ *         example: 100
+ *       - in: query
+ *         name: search
+ *         required: false
+ *         schema:
+ *           type: string
+ *         description: Palabra o texto para filtrar clientes por razón social. La búsqueda es case-insensitive y busca coincidencias parciales.
+ *         example: "Distribuidora"
  *     responses:
  *       200:
  *         description: Lista de clientes obtenida exitosamente.
@@ -161,16 +211,38 @@ const clientsController = require('../controllers/clients.controller');
  *           application/json:
  *             schema:
  *               $ref: '#/components/schemas/ClientsResponse'
- *             example:
- *               success: true
- *               data:
- *                 - f9740_id: 101
- *                   f9740_nit: "901123456"
- *                   f9740_razon_social: "Distribuidora S.A.S"
- *                   f9740_nombre: "Distribuidora Principal"
- *                   f9740_email: "info@empresa.com"
- *                   f9740_celular: "3001234567"
- *                   f9740_direccion1: "Calle 123 #45-67"
+ *             examples:
+ *               conPaginacion:
+ *                 summary: Respuesta con paginación
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     - f9740_id: 101
+ *                       f9740_nit: "901123456"
+ *                       f9740_razon_social: "Distribuidora S.A.S"
+ *                       f9740_nombre: "Distribuidora Principal"
+ *                       f9740_email: null
+ *                       f9740_celular: null
+ *                       f9740_direccion1: null
+ *                   total: 5000
+ *                   pagination:
+ *                     page: 1
+ *                     pageSize: 100
+ *                     total: 5000
+ *                     totalPages: 50
+ *               sinPaginacion:
+ *                 summary: Respuesta sin paginación
+ *                 value:
+ *                   success: true
+ *                   data:
+ *                     - f9740_id: 101
+ *                       f9740_nit: "901123456"
+ *                       f9740_razon_social: "Distribuidora S.A.S"
+ *                       f9740_nombre: "Distribuidora Principal"
+ *                       f9740_email: null
+ *                       f9740_celular: null
+ *                       f9740_direccion1: null
+ *                   total: 5000
  */
 
 /**
