@@ -30,9 +30,6 @@ if (process.env.NODE_ENV !== 'production') {
   app.use(morgan('combined'));
 }
 
-// 📘 Swagger UI
-setupSwagger(app);
-
 /**
  * @swagger
  * components:
@@ -139,6 +136,9 @@ app.get('/api/health', (req, res) => {
     message: 'API is running'
   });
 });
+
+// 📘 Swagger UI (debe ir después de la documentación)
+setupSwagger(app);
 
 // Rutas principales
 app.use('/api/clients', clientsRoutes);

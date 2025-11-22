@@ -1,11 +1,15 @@
+
+var path = require("path"); 
+var config = require(path.join(__dirname, 'config.json'));
+
 module.exports = {
-  port: process.env.PORT || 3000,
+  port: config.PORT || 3000,
   db: {
-    host: process.env.DB_HOST,
-    user: process.env.DB_USER,
-    password: process.env.DB_PASS,
-    database: process.env.DB_NAME,
-    port: process.env.DB_PORT ? Number(process.env.DB_PORT) : 1433,
+    host: config.DB_HOST,
+    user: config.DB_USER,
+    password: config.DB_PASS,
+    database: config.DB_NAME,
+    port: config.DB_PORT ? Number(config.DB_PORT) : 1433,
   },
 };
 

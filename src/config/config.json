@@ -1,0 +1,11 @@
+{
+    "type": "sqlserver",
+    "DB_HOST": "dbsbs02-m3.siesacloud.local",
+    "DB_PORT": 1433,
+    "DB_NAME": "SUnoEE_DistriSYE_Real",
+    "DB_USER": "Distrisye",
+    "DB_PASS": "Distrisye$12$%",
+    "trustServerCertificate": false,
+    "encrypt": true,
+    "PORT": 3000
+  }

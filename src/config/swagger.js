@@ -1,5 +1,6 @@
 const swaggerJsDoc = require('swagger-jsdoc');
 const swaggerUi = require('swagger-ui-express');
+const path = require('path');
 
 const options = {
   definition: {
@@ -24,10 +25,18 @@ const options = {
       },
     ],
   },
-  apis: ['./src/routes/*.js', './src/app.js'], // ruta donde Swagger buscará las anotaciones
+  apis: [
+    path.join(__dirname, '../routes/*.js'),
+    path.join(__dirname, '../app.js')
+  ], // ruta donde Swagger buscará las anotaciones
 };
 
 const swaggerSpec = swaggerJsDoc(options);
+
+// Log para verificar qué archivos se están cargando (solo en desarrollo)
+if (process.env.NODE_ENV !== 'production') {
+  console.log('📘 Swagger buscando archivos en:', options.apis);
+}
 
 function setupSwagger(app) {
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
@@ -36,6 +45,13 @@ function setupSwagger(app) {
   }));
   const port = process.env.PORT || 3000;
   console.log(`📘 Swagger disponible en http://localhost:${port}/api/docs`);
+  
+  // Verificar que el endpoint de health esté documentado
+  if (swaggerSpec.paths && swaggerSpec.paths['/api/health']) {
+    console.log('✅ Endpoint /api/health documentado en Swagger');
+  } else {
+    console.warn('⚠️  Endpoint /api/health NO encontrado en Swagger');
+  }
 }
 
 module.exports = { setupSwagger };
