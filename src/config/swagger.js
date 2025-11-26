@@ -16,7 +16,7 @@ const options = {
     },
     servers: [
       {
-        url: 'https://api-siesa.sye.vehiman.com',
+        url: 'http://192.168.1.254:3000',
         description: 'Servidor de producción',
       },
       {
