@@ -1,0 +1,21 @@
+version: "3.9"
+services:
+  api:
+    build: .
+    environment:
+      - DB_HOST=dbsbs02-m3.siesacloud.local
+      - DB_PORT=1433
+      - DB_USER=Distrisye
+      - DB_PASS=Distrisye$12$%
+      - DB_NAME=SUnoEE_DistriSYE_Real
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - backend
+
+networks:
+  backend:

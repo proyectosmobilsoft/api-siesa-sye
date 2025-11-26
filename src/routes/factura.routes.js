@@ -126,58 +126,288 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *     Factura:
  *       type: object
  *       properties:
- *         IdCompania:
+ *         f350_id_cia:
  *           type: integer
  *           description: ID de la compañía
  *           example: 1
- *         NumeroFactura:
+ *         f350_rowid:
+ *           type: integer
+ *           description: ID único del documento contable
+ *           example: 831917
+ *         f350_id_co:
  *           type: string
- *           description: Número de la factura
- *           example: "FV-2024-001234"
- *         FechaFactura:
+ *           description: ID del centro de operación
+ *           example: "001"
+ *         f350_id_tipo_docto:
+ *           type: string
+ *           description: ID del tipo de documento
+ *           example: "RC"
+ *         f350_consec_docto:
+ *           type: integer
+ *           description: Número consecutivo del documento
+ *           example: 65637
+ *         f350_prefijo:
+ *           type: string
+ *           nullable: true
+ *           description: Prefijo del documento
+ *           example: null
+ *         f350_fecha:
  *           type: string
  *           format: date-time
- *           description: Fecha de la factura
- *           example: "2024-03-15T00:00:00.000Z"
- *         IdTercero:
- *           type: string
- *           description: ID del tercero/cliente
- *           example: "12345"
- *         NombreCliente:
- *           type: string
- *           description: Razón social del cliente
- *           example: "EMPRESA COMERCIAL S.A.S"
- *         TipoDocumento:
- *           type: string
- *           description: Tipo de documento
- *           example: "Factura de Venta"
- *         CodigoCuenta:
- *           type: string
- *           description: Código de la cuenta contable
- *           example: "411505"
- *         NombreCuenta:
- *           type: string
- *           description: Nombre de la cuenta contable
- *           example: "Ingresos por Ventas"
- *         ValorDebito:
- *           type: number
- *           format: double
- *           description: Valor débito de la factura
- *           example: 1000000.00
- *         ValorCredito:
- *           type: number
- *           format: double
- *           description: Valor crédito de la factura
- *           example: 0.00
- *         ValorNeto:
- *           type: number
- *           format: double
- *           description: Valor neto de la factura
- *           example: 1000000.00
- *         PeriodoContable:
+ *           description: Fecha del documento
+ *           example: "2025-05-15T00:00:00.000Z"
+ *         f350_id_periodo:
  *           type: integer
  *           description: Periodo contable en formato YYYYMM
- *           example: 202403
+ *           example: 202505
+ *         f350_rowid_tercero:
+ *           type: integer
+ *           description: ID del tercero (rowid)
+ *           example: 29505
+ *         f350_id_sucursal:
+ *           type: string
+ *           nullable: true
+ *           description: ID de la sucursal
+ *           example: null
+ *         f350_total_db:
+ *           type: number
+ *           format: double
+ *           description: Total débito del documento
+ *           example: 5428017.00
+ *         f350_total_cr:
+ *           type: number
+ *           format: double
+ *           description: Total crédito del documento
+ *           example: 5428017.00
+ *         f350_id_clase_docto:
+ *           type: integer
+ *           description: ID de la clase de documento
+ *           example: 13
+ *         f350_ind_estado:
+ *           type: integer
+ *           description: Indicador de estado (1=Activo, 0=Inactivo)
+ *           example: 1
+ *         f350_ind_transmit:
+ *           type: integer
+ *           description: Indicador de transmisión
+ *           example: 0
+ *         f350_fecha_ts_creacion:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de creación
+ *           example: "2025-05-16T07:48:09.920Z"
+ *         f350_fecha_ts_actualizacion:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de actualización
+ *           example: "2025-05-16T07:48:14.977Z"
+ *         f350_fecha_ts_aprobacion:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de aprobación
+ *           example: "2025-05-16T07:48:14.977Z"
+ *         f350_fecha_ts_anulacion:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de anulación
+ *           example: null
+ *         f350_usuario_creacion:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que creó el documento
+ *           example: "ksalinas"
+ *         f350_usuario_actualizacion:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que actualizó el documento
+ *           example: "ksalinas"
+ *         f350_usuario_aprobacion:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que aprobó el documento
+ *           example: "ksalinas"
+ *         f350_usuario_anulacion:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que anuló el documento
+ *           example: null
+ *         f350_total_base_gravable:
+ *           type: number
+ *           format: double
+ *           description: Total base gravable
+ *           example: 0.00
+ *         f350_ind_impresion:
+ *           type: integer
+ *           description: Indicador de impresión (1=Impreso, 0=No impreso)
+ *           example: 1
+ *         f350_nro_impresiones:
+ *           type: integer
+ *           description: Número de impresiones
+ *           example: 1
+ *         f350_fecha_ts_habilita_imp:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de habilitación de impresión
+ *           example: null
+ *         f350_usuario_habilita_imp:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que habilitó la impresión
+ *           example: null
+ *         f350_notas:
+ *           type: string
+ *           nullable: true
+ *           description: Notas del documento
+ *           example: "CANCELA"
+ *         f350_rowid_docto_base:
+ *           type: integer
+ *           nullable: true
+ *           description: RowID del documento base
+ *           example: null
+ *         f350_referencia:
+ *           type: string
+ *           nullable: true
+ *           description: Referencia del documento
+ *           example: null
+ *         f350_id_mandato:
+ *           type: string
+ *           nullable: true
+ *           description: ID del mandato
+ *           example: null
+ *         f350_rowid_movto_entidad:
+ *           type: integer
+ *           nullable: true
+ *           description: RowID del movimiento de entidad
+ *           example: null
+ *         f350_id_motivo_otros:
+ *           type: string
+ *           nullable: true
+ *           description: ID del motivo otros
+ *           example: null
+ *         f350_id_moneda_docto:
+ *           type: string
+ *           description: ID de la moneda del documento
+ *           example: "COP"
+ *         f350_id_moneda_conv:
+ *           type: string
+ *           description: ID de la moneda de conversión
+ *           example: "COP"
+ *         f350_ind_forma_conv:
+ *           type: integer
+ *           description: Indicador de forma de conversión
+ *           example: 0
+ *         f350_tasa_conv:
+ *           type: number
+ *           format: double
+ *           description: Tasa de conversión
+ *           example: 1.0000
+ *         f350_id_moneda_local:
+ *           type: string
+ *           description: ID de la moneda local
+ *           example: "COP"
+ *         f350_ind_forma_local:
+ *           type: integer
+ *           description: Indicador de forma local
+ *           example: 0
+ *         f350_tasa_local:
+ *           type: number
+ *           format: double
+ *           description: Tasa local
+ *           example: 1.0000
+ *         f350_id_tipo_cambio:
+ *           type: string
+ *           description: ID del tipo de cambio
+ *           example: "001"
+ *         f350_ind_cfd:
+ *           type: integer
+ *           description: Indicador CFD (Comprobante Fiscal Digital)
+ *           example: 0
+ *         f350_usuario_impresion:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que imprimió el documento
+ *           example: "ksalinas"
+ *         f350_fecha_ts_impresion:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de impresión
+ *           example: "2025-05-16T07:48:18.793Z"
+ *         f350_rowid_te_plantilla:
+ *           type: integer
+ *           nullable: true
+ *           description: RowID de la plantilla
+ *           example: null
+ *         f350_total_db2:
+ *           type: number
+ *           format: double
+ *           description: Total débito 2
+ *           example: 5428017.00
+ *         f350_total_cr2:
+ *           type: number
+ *           format: double
+ *           description: Total crédito 2
+ *           example: 5428017.00
+ *         f350_total_db3:
+ *           type: number
+ *           format: double
+ *           description: Total débito 3
+ *           example: 5428017.00
+ *         f350_total_cr3:
+ *           type: number
+ *           format: double
+ *           description: Total crédito 3
+ *           example: 5428017.00
+ *         f350_ind_impto_asumido:
+ *           type: integer
+ *           description: Indicador de impuesto asumido
+ *           example: 2
+ *         f350_rowid_sesion:
+ *           type: integer
+ *           description: RowID de la sesión
+ *           example: 340073
+ *         f350_ind_tipo_origen:
+ *           type: integer
+ *           description: Indicador de tipo de origen
+ *           example: 0
+ *         f350_rowid_docto_rp:
+ *           type: integer
+ *           nullable: true
+ *           description: RowID del documento RP
+ *           example: null
+ *         f350_id_proyecto:
+ *           type: string
+ *           nullable: true
+ *           description: ID del proyecto
+ *           example: null
+ *         f350_ind_dif_cambio_forma:
+ *           type: integer
+ *           description: Indicador de diferencia de cambio forma
+ *           example: 0
+ *         f350_ind_clase_origen:
+ *           type: integer
+ *           description: Indicador de clase de origen
+ *           example: 0
+ *         f350_ind_envio_correo:
+ *           type: integer
+ *           description: Indicador de envío de correo
+ *           example: 0
+ *         f350_usuario_envio_correo:
+ *           type: string
+ *           nullable: true
+ *           description: Usuario que envió el correo
+ *           example: null
+ *         f350_fecha_ts_envio_correo:
+ *           type: string
+ *           format: date-time
+ *           nullable: true
+ *           description: Fecha y hora de envío de correo
+ *           example: null
  *     FacturasResponse:
  *       type: object
  *       properties:
@@ -259,30 +489,66 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *             example:
  *               success: true
  *               data:
- *                 - IdCompania: 1
- *                   NumeroFactura: "FV-2024-001234"
- *                   FechaFactura: "2024-03-15T00:00:00.000Z"
- *                   IdTercero: "12345"
- *                   NombreCliente: "EMPRESA COMERCIAL S.A.S"
- *                   TipoDocumento: "Factura de Venta"
- *                   CodigoCuenta: "411505"
- *                   NombreCuenta: "Ingresos por Ventas"
- *                   ValorDebito: 1000000.00
- *                   ValorCredito: 0.00
- *                   ValorNeto: 1000000.00
- *                   PeriodoContable: 202403
- *                 - IdCompania: 1
- *                   NumeroFactura: "FV-2024-001235"
- *                   FechaFactura: "2024-03-14T00:00:00.000Z"
- *                   IdTercero: "12346"
- *                   NombreCliente: "DISTRIBUIDORA ABC LTDA"
- *                   TipoDocumento: "Factura de Venta"
- *                   CodigoCuenta: "411505"
- *                   NombreCuenta: "Ingresos por Ventas"
- *                   ValorDebito: 850000.00
- *                   ValorCredito: 0.00
- *                   ValorNeto: 850000.00
- *                   PeriodoContable: 202403
+ *                 - f350_id_cia: 1
+ *                   f350_rowid: 831917
+ *                   f350_id_co: "001"
+ *                   f350_id_tipo_docto: "RC"
+ *                   f350_consec_docto: 65637
+ *                   f350_prefijo: null
+ *                   f350_fecha: "2025-05-15T00:00:00.000Z"
+ *                   f350_id_periodo: 202505
+ *                   f350_rowid_tercero: 29505
+ *                   f350_id_sucursal: null
+ *                   f350_total_db: 5428017.00
+ *                   f350_total_cr: 5428017.00
+ *                   f350_id_clase_docto: 13
+ *                   f350_ind_estado: 1
+ *                   f350_ind_transmit: 0
+ *                   f350_fecha_ts_creacion: "2025-05-16T07:48:09.920Z"
+ *                   f350_fecha_ts_actualizacion: "2025-05-16T07:48:14.977Z"
+ *                   f350_fecha_ts_aprobacion: "2025-05-16T07:48:14.977Z"
+ *                   f350_fecha_ts_anulacion: null
+ *                   f350_usuario_creacion: "ksalinas"
+ *                   f350_usuario_actualizacion: "ksalinas"
+ *                   f350_usuario_aprobacion: "ksalinas"
+ *                   f350_usuario_anulacion: null
+ *                   f350_total_base_gravable: 0.00
+ *                   f350_ind_impresion: 1
+ *                   f350_nro_impresiones: 1
+ *                   f350_fecha_ts_habilita_imp: null
+ *                   f350_usuario_habilita_imp: null
+ *                   f350_notas: "CANCELA"
+ *                   f350_rowid_docto_base: null
+ *                   f350_referencia: null
+ *                   f350_id_mandato: null
+ *                   f350_rowid_movto_entidad: null
+ *                   f350_id_motivo_otros: null
+ *                   f350_id_moneda_docto: "COP"
+ *                   f350_id_moneda_conv: "COP"
+ *                   f350_ind_forma_conv: 0
+ *                   f350_tasa_conv: 1.0000
+ *                   f350_id_moneda_local: "COP"
+ *                   f350_ind_forma_local: 0
+ *                   f350_tasa_local: 1.0000
+ *                   f350_id_tipo_cambio: "001"
+ *                   f350_ind_cfd: 0
+ *                   f350_usuario_impresion: "ksalinas"
+ *                   f350_fecha_ts_impresion: "2025-05-16T07:48:18.793Z"
+ *                   f350_rowid_te_plantilla: null
+ *                   f350_total_db2: 5428017.00
+ *                   f350_total_cr2: 5428017.00
+ *                   f350_total_db3: 5428017.00
+ *                   f350_total_cr3: 5428017.00
+ *                   f350_ind_impto_asumido: 2
+ *                   f350_rowid_sesion: 340073
+ *                   f350_ind_tipo_origen: 0
+ *                   f350_rowid_docto_rp: null
+ *                   f350_id_proyecto: null
+ *                   f350_ind_dif_cambio_forma: 0
+ *                   f350_ind_clase_origen: 0
+ *                   f350_ind_envio_correo: 0
+ *                   f350_usuario_envio_correo: null
+ *                   f350_fecha_ts_envio_correo: null
  *               total: 5000
  *               pagination:
  *                 page: 1

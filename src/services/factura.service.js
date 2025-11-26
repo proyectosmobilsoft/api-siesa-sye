@@ -75,24 +75,70 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
   // - t350_co_docto_contable.f350_fecha (para ORDER BY)
   const query = `
     SELECT 
-      d.f350_id_cia AS IdCompania,
-      ISNULL(d.f350_prefijo + '-', '') + CAST(d.f350_consec_docto AS VARCHAR) AS NumeroFactura,
-      d.f350_fecha AS FechaFactura,
-      d.f350_rowid_tercero AS IdTercero,
-      ISNULL(t.f200_razon_social, '') AS NombreCliente,
-      d.f350_id_tipo_docto AS TipoDocumento,
-      NULL AS CodigoCuenta,
-      NULL AS NombreCuenta,
-      d.f350_total_db AS ValorDebito,
-      d.f350_total_cr AS ValorCredito,
-      (d.f350_total_db - d.f350_total_cr) AS ValorNeto,
-      d.f350_id_periodo AS PeriodoContable
+      d.f350_id_cia,
+      d.f350_rowid,
+      d.f350_id_co,
+      d.f350_id_tipo_docto,
+      d.f350_consec_docto,
+      d.f350_prefijo,
+      d.f350_fecha,
+      d.f350_id_periodo,
+      d.f350_rowid_tercero,
+      d.f350_id_sucursal,
+      d.f350_total_db,
+      d.f350_total_cr,
+      d.f350_id_clase_docto,
+      d.f350_ind_estado,
+      d.f350_ind_transmit,
+      d.f350_fecha_ts_creacion,
+      d.f350_fecha_ts_actualizacion,
+      d.f350_fecha_ts_aprobacion,
+      d.f350_fecha_ts_anulacion,
+      d.f350_usuario_creacion,
+      d.f350_usuario_actualizacion,
+      d.f350_usuario_aprobacion,
+      d.f350_usuario_anulacion,
+      d.f350_total_base_gravable,
+      d.f350_ind_impresion,
+      d.f350_nro_impresiones,
+      d.f350_fecha_ts_habilita_imp,
+      d.f350_usuario_habilita_imp,
+      d.f350_notas,
+      d.f350_rowid_docto_base,
+      d.f350_referencia,
+      d.f350_id_mandato,
+      d.f350_rowid_movto_entidad,
+      d.f350_id_motivo_otros,
+      d.f350_id_moneda_docto,
+      d.f350_id_moneda_conv,
+      d.f350_ind_forma_conv,
+      d.f350_tasa_conv,
+      d.f350_id_moneda_local,
+      d.f350_ind_forma_local,
+      d.f350_tasa_local,
+      d.f350_id_tipo_cambio,
+      d.f350_ind_cfd,
+      d.f350_usuario_impresion,
+      d.f350_fecha_ts_impresion,
+      d.f350_rowid_te_plantilla,
+      d.f350_total_db2,
+      d.f350_total_cr2,
+      d.f350_total_db3,
+      d.f350_total_cr3,
+      d.f350_ind_impto_asumido,
+      d.f350_rowid_sesion,
+      d.f350_ind_tipo_origen,
+      d.f350_rowid_docto_rp,
+      d.f350_id_proyecto,
+      d.f350_ind_dif_cambio_forma,
+      d.f350_ind_clase_origen,
+      d.f350_ind_envio_correo,
+      d.f350_usuario_envio_correo,
+      d.f350_fecha_ts_envio_correo
     FROM t350_co_docto_contable d WITH (NOLOCK)
-    LEFT JOIN t200_mm_terceros t WITH (NOLOCK)
-      ON t.f200_rowid = d.f350_rowid_tercero
-    WHERE (d.f350_id_tipo_docto LIKE '%FV%' OR d.f350_id_tipo_docto LIKE '%FC%' OR d.f350_id_tipo_docto LIKE '%Factura%')
+    WHERE (d.f350_id_tipo_docto LIKE '%FV%' OR d.f350_id_tipo_docto LIKE '%FC%' OR d.f350_id_tipo_docto LIKE '%FCE%')
       ${terceroFilter}
-    ORDER BY d.f350_fecha DESC
+    ORDER BY d.f350_fecha ASC
     OFFSET @offset ROWS
     FETCH NEXT @limit ROWS ONLY
   `;
