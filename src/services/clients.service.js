@@ -22,7 +22,7 @@ async function getAllClients(page = null, pageSize = null, search = null) {
   if (search && search.trim() !== '') {
     const searchTerm = `%${search.trim()}%`;
     request.input('searchTerm', searchTerm);
-    searchFilter = `AND f200_razon_social LIKE @searchTerm`;
+    searchFilter = `AND (f200_razon_social LIKE @searchTerm OR f200_nit LIKE @searchTerm)`;
   }
 
   const query = `
