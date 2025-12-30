@@ -37,7 +37,7 @@ const clientsController = require('../controllers/clients.controller');
  *           type: string
  *           description: Dirección principal del cliente
  *           example: "Calle 123 #45-67"
- *          ClientsResponse:
+ *     ClientsResponse:
  *       type: object
  *       properties:
  *         success:

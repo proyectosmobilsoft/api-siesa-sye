@@ -1,6 +1,7 @@
 const express = require('express');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const cors = require('cors');
 
 const clientsRoutes = require('./routes/clients.routes');
 const companiesRoutes = require('./routes/companies.routes');
@@ -9,10 +10,21 @@ const reportsRoutes = require('./routes/reports.routes');
 const warehousesRoutes = require('./routes/warehouses.routes');
 const facturaRoutes = require('./routes/factura.routes');
 const cuentasBancariasRoutes = require('./routes/cuentas-bancarias.routes');
+const localRoutes = require('./routes/local.routes');
+const reciboCajaRoutes = require('./routes/recibo-caja.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
 const app = express();
+
+// Configurar CORS - Permitir peticiones desde cualquier origen
+app.use(cors({
+  origin: '*', // En producción, especifica los orígenes permitidos
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept', 'X-Requested-With'],
+  credentials: true,
+  optionsSuccessStatus: 200 // Para navegadores legacy
+}));
 
 // Configurar Helmet con opciones menos restrictivas para producción
 app.use(helmet({
@@ -148,6 +160,8 @@ app.use('/api/reports', reportsRoutes);
 app.use('/api/warehouses', warehousesRoutes);
 app.use('/api/factura', facturaRoutes);
 app.use('/api/maestros/cuentas-bancarias', cuentasBancariasRoutes);
+app.use('/api/local', localRoutes);
+app.use('/api/recibo-caja', reciboCajaRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

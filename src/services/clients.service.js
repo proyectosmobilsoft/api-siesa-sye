@@ -41,7 +41,7 @@ async function getAllClients(page = null, pageSize = null, search = null) {
       NULL AS f9740_celular,
       NULL AS f9740_direccion1
     FROM t200_mm_terceros WITH (NOLOCK)
-    WHERE f200_ind_tipo_tercero = 1
+    WHERE f200_ind_tipo_tercero in (1, 2)
     ${searchFilter}
     ORDER BY f200_rowid DESC
     ${paginationClause}

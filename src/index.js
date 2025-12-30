@@ -1,6 +1,6 @@
 require('dotenv').config();
 const app = require('./app');
-const { getPool } = require('./db/db');
+const { getPool, getPool2 } = require('./db/db');
 const { port } = require('./config/env');
 
 // Manejo de errores no capturados
@@ -16,8 +16,17 @@ process.on('unhandledRejection', (reason, promise) => {
 
 async function startServer() {
   try {
+    // Conectar a ambas bases de datos
     await getPool();
-    console.log('✅ Database connected successfully');
+    console.log('✅ Primary Database connected successfully');
+    
+    // Intentar conectar a la segunda BD (opcional, solo si está configurada)
+    try {
+      await getPool2();
+      console.log('✅ Secondary Database connected successfully');
+    } catch (err) {
+      console.warn('⚠️  Secondary Database connection failed (continuing with primary DB only):', err.message);
+    }
 
     const server = app.listen(port, () => {
       console.log(`🚀 Server running on port ${port}`);

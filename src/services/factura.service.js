@@ -74,7 +74,29 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
   // - t350_co_docto_contable.f350_rowid_tercero
   // - t350_co_docto_contable.f350_fecha (para ORDER BY)
   const query = `
+
+ WITH AuxiliarCliente AS (
+    -- Identifica el movimiento del cliente (cartera) para cada BQE
     SELECT 
+        m.f351_rowid_docto,
+        m.f351_rowid_auxiliar
+    FROM t351_co_mov_docto m WITH (NOLOCK)
+    WHERE m.f351_valor_db > 0
+      AND m.f351_ind_estado = 1
+),
+
+Abonos AS (
+    -- Total de abonos aplicados a esa cuenta por cobrar
+    SELECT 
+        m.f351_rowid_auxiliar,
+        SUM(m.f351_valor_cr) AS valor_abonos
+    FROM t351_co_mov_docto m WITH (NOLOCK)
+    WHERE m.f351_ind_estado = 1
+      AND m.f351_valor_cr > 0
+    GROUP BY m.f351_rowid_auxiliar
+)
+
+SELECT 
       d.f350_id_cia,
       d.f350_rowid,
       d.f350_id_co,
@@ -134,13 +156,45 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
       d.f350_ind_clase_origen,
       d.f350_ind_envio_correo,
       d.f350_usuario_envio_correo,
-      d.f350_fecha_ts_envio_correo
-    FROM t350_co_docto_contable d WITH (NOLOCK)
-    WHERE (d.f350_id_tipo_docto LIKE '%FV%' OR d.f350_id_tipo_docto LIKE '%FC%' OR d.f350_id_tipo_docto LIKE '%FCE%')
+      d.f350_fecha_ts_envio_correo,
+
+      -- Movimientos reales de abonos
+      ISNULL(a.valor_abonos, 0) AS valor_movimientos,
+
+      -- Saldo real
+      (d.f350_total_cr - ISNULL(a.valor_abonos, 0)) AS saldo_pendiente,
+
+      -- Estado del saldo
+      CASE 
+          WHEN a.valor_abonos IS NULL THEN 'SIN MOVIMIENTOS'
+          WHEN d.f350_total_cr > ISNULL(a.valor_abonos, 0) THEN 'MOV PENDIENTES'
+          WHEN d.f350_total_cr = a.valor_abonos THEN 'SALDADA'
+          ELSE 'DESCONOCIDO'
+      END AS estado_saldo
+
+FROM t350_co_docto_contable d WITH (NOLOCK)
+
+LEFT JOIN AuxiliarCliente ac
+    ON ac.f351_rowid_docto = d.f350_rowid
+
+LEFT JOIN Abonos a
+    ON a.f351_rowid_auxiliar = ac.f351_rowid_auxiliar
+
+WHERE 
+      d.f350_id_tipo_docto = 'BQE'
       ${terceroFilter}
-    ORDER BY d.f350_fecha ASC
-    OFFSET @offset ROWS
-    FETCH NEXT @limit ROWS ONLY
+      AND d.f350_ind_estado = 1
+      AND d.f350_total_cr > 0
+      AND d.f350_fecha_ts_anulacion IS NULL
+
+      -- Solo documentos sin abonar o con saldo pendiente
+      AND (d.f350_total_cr - ISNULL(a.valor_abonos, 0)) > 0
+
+ORDER BY d.f350_fecha ASC
+OFFSET @offset ROWS
+FETCH NEXT @limit ROWS ONLY;
+
+    
   `;
 
   const result = await request.query(query);

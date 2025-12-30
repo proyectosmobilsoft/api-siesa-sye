@@ -7,5 +7,11 @@
     "DB_PASS": "Distrisye$12$%",
     "trustServerCertificate": false,
     "encrypt": true,
-    "PORT": 3000
+    "PORT": 3010,
+
+    "DB2_HOST": "localhost",
+    "DB2_NAME": "sye-siesa",
+    "DB2_USER": "sa",
+    "DB2_PORT": 1434,
+    "DB2_PASS": "Axul3j0"
   }

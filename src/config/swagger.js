@@ -16,11 +16,11 @@ const options = {
     },
     servers: [
       {
-        url: 'http://192.168.1.254:3000',
+        url: 'http://192.168.1.254:3010',
         description: 'Servidor de producción',
       },
       {
-        url: 'http://localhost:3000',
+        url: 'http://localhost:3010',
         description: 'Servidor local de desarrollo',
       },
     ],
@@ -42,9 +42,37 @@ function setupSwagger(app) {
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
     customCss: '.swagger-ui .topbar { display: none }',
     customSiteTitle: 'API Distrisye - Documentación',
+    swaggerOptions: {
+      persistAuthorization: true,
+      displayRequestDuration: true,
+      filter: true,
+      tryItOutEnabled: true,
+      supportedSubmitMethods: ['get', 'post', 'put', 'delete', 'patch'],
+      requestInterceptor: (request) => {
+        // Asegurar que las peticiones usen el protocolo correcto
+        if (request.url && !request.url.startsWith('http')) {
+          const host = request.headers && request.headers.host;
+          if (host) {
+            request.url = `http://${host}${request.url}`;
+          }
+        }
+        // Asegurar que los headers sean correctos
+        if (!request.headers) {
+          request.headers = {};
+        }
+        request.headers['Accept'] = 'application/json';
+        request.headers['Content-Type'] = 'application/json';
+        return request;
+      },
+      responseInterceptor: (response) => {
+        // Asegurar que las respuestas se manejen correctamente
+        return response;
+      }
+    }
   }));
-  const port = process.env.PORT || 3000;
+  const port = process.env.PORT || 3010;
   console.log(`📘 Swagger disponible en http://localhost:${port}/api/docs`);
+  console.log(`📘 Swagger disponible en http://192.168.1.254:${port}/api/docs`);
   
   // Verificar que el endpoint de health esté documentado
   if (swaggerSpec.paths && swaggerSpec.paths['/api/health']) {
