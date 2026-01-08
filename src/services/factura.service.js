@@ -65,136 +65,21 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
   let terceroFilter = '';
   if (idTercero) {
     request.input('idTercero', require('mssql').Int, idTercero);
-    terceroFilter = 'AND d.f350_rowid_tercero = @idTercero';
   }
 
-  // Consulta optimizada con OFFSET/FETCH para paginación eficiente
-  // Nota: Se recomienda crear índices en:
-  // - t350_co_docto_contable.f350_id_tipo_docto
-  // - t350_co_docto_contable.f350_rowid_tercero
-  // - t350_co_docto_contable.f350_fecha (para ORDER BY)
   const query = `
-
- WITH AuxiliarCliente AS (
-    -- Identifica el movimiento del cliente (cartera) para cada BQE
-    SELECT 
-        m.f351_rowid_docto,
-        m.f351_rowid_auxiliar
-    FROM t351_co_mov_docto m WITH (NOLOCK)
-    WHERE m.f351_valor_db > 0
-      AND m.f351_ind_estado = 1
-),
-
-Abonos AS (
-    -- Total de abonos aplicados a esa cuenta por cobrar
-    SELECT 
-        m.f351_rowid_auxiliar,
-        SUM(m.f351_valor_cr) AS valor_abonos
-    FROM t351_co_mov_docto m WITH (NOLOCK)
-    WHERE m.f351_ind_estado = 1
-      AND m.f351_valor_cr > 0
-    GROUP BY m.f351_rowid_auxiliar
-)
-
-SELECT 
-      d.f350_id_cia,
-      d.f350_rowid,
-      d.f350_id_co,
-      d.f350_id_tipo_docto,
-      d.f350_consec_docto,
-      d.f350_prefijo,
-      d.f350_fecha,
-      d.f350_id_periodo,
-      d.f350_rowid_tercero,
-      d.f350_id_sucursal,
-      d.f350_total_db,
-      d.f350_total_cr,
-      d.f350_id_clase_docto,
-      d.f350_ind_estado,
-      d.f350_ind_transmit,
-      d.f350_fecha_ts_creacion,
-      d.f350_fecha_ts_actualizacion,
-      d.f350_fecha_ts_aprobacion,
-      d.f350_fecha_ts_anulacion,
-      d.f350_usuario_creacion,
-      d.f350_usuario_actualizacion,
-      d.f350_usuario_aprobacion,
-      d.f350_usuario_anulacion,
-      d.f350_total_base_gravable,
-      d.f350_ind_impresion,
-      d.f350_nro_impresiones,
-      d.f350_fecha_ts_habilita_imp,
-      d.f350_usuario_habilita_imp,
-      d.f350_notas,
-      d.f350_rowid_docto_base,
-      d.f350_referencia,
-      d.f350_id_mandato,
-      d.f350_rowid_movto_entidad,
-      d.f350_id_motivo_otros,
-      d.f350_id_moneda_docto,
-      d.f350_id_moneda_conv,
-      d.f350_ind_forma_conv,
-      d.f350_tasa_conv,
-      d.f350_id_moneda_local,
-      d.f350_ind_forma_local,
-      d.f350_tasa_local,
-      d.f350_id_tipo_cambio,
-      d.f350_ind_cfd,
-      d.f350_usuario_impresion,
-      d.f350_fecha_ts_impresion,
-      d.f350_rowid_te_plantilla,
-      d.f350_total_db2,
-      d.f350_total_cr2,
-      d.f350_total_db3,
-      d.f350_total_cr3,
-      d.f350_ind_impto_asumido,
-      d.f350_rowid_sesion,
-      d.f350_ind_tipo_origen,
-      d.f350_rowid_docto_rp,
-      d.f350_id_proyecto,
-      d.f350_ind_dif_cambio_forma,
-      d.f350_ind_clase_origen,
-      d.f350_ind_envio_correo,
-      d.f350_usuario_envio_correo,
-      d.f350_fecha_ts_envio_correo,
-
-      -- Movimientos reales de abonos
-      ISNULL(a.valor_abonos, 0) AS valor_movimientos,
-
-      -- Saldo real
-      (d.f350_total_cr - ISNULL(a.valor_abonos, 0)) AS saldo_pendiente,
-
-      -- Estado del saldo
-      CASE 
-          WHEN a.valor_abonos IS NULL THEN 'SIN MOVIMIENTOS'
-          WHEN d.f350_total_cr > ISNULL(a.valor_abonos, 0) THEN 'MOV PENDIENTES'
-          WHEN d.f350_total_cr = a.valor_abonos THEN 'SALDADA'
-          ELSE 'DESCONOCIDO'
-      END AS estado_saldo
-
-FROM t350_co_docto_contable d WITH (NOLOCK)
-
-LEFT JOIN AuxiliarCliente ac
-    ON ac.f351_rowid_docto = d.f350_rowid
-
-LEFT JOIN Abonos a
-    ON a.f351_rowid_auxiliar = ac.f351_rowid_auxiliar
-
-WHERE 
-      d.f350_id_tipo_docto = 'BQE'
-      ${terceroFilter}
-      AND d.f350_ind_estado = 1
-      AND d.f350_total_cr > 0
-      AND d.f350_fecha_ts_anulacion IS NULL
-
-      -- Solo documentos sin abonar o con saldo pendiente
-      AND (d.f350_total_cr - ISNULL(a.valor_abonos, 0)) > 0
-
-ORDER BY d.f350_fecha ASC
-OFFSET @offset ROWS
-FETCH NEXT @limit ROWS ONLY;
-
-    
+    EXEC [dbo].[sp_sa_leer_sas_tercero]
+    @cia = 1,              -- Compañía
+    @idco = '001',         -- Centro de Operación (visto en tus imágenes)
+    @idun = '99',          -- Unidad de Negocio (General)
+    @rowidauxiliar = 9,    -- Cuenta de Clientes (Auxiliar 9)
+    @rowidtercero = @idTercero, -- EL BUFETE KYRIOS SAS
+    @idsucursal = '001',   -- Sucursal 001
+    @escxc = -1,           -- IMPORTANTE: -1 significa "Cuentas por Cobrar"
+    @enmonedalocal = -1,   -- -1 significa "Moneda Local" (Pesos)
+    @afecha = 0,
+    @fechamayoroigual = NULL,
+    @p_ind_libro = 1;      -- 1 significa "Libro 1 / PCGA" (Para evitar duplicados NIIF)
   `;
 
   const result = await request.query(query);
