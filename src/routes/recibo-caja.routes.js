@@ -1,6 +1,6 @@
-const express = require('express');
+const express = require("express");
 const router = express.Router();
-const reciboCajaController = require('../controllers/recibo-caja.controller');
+const reciboCajaController = require("../controllers/recibo-caja.controller");
 
 /**
  * @swagger
@@ -9,228 +9,135 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *     ReciboCajaRequest:
  *       type: object
  *       required:
- *         - id_cia
- *         - id_co
- *         - id_tipo_docto
- *         - consec_docto
- *         - prefijo
- *         - fecha
- *         - periodo
- *         - rowid_tercero
- *         - sucursal
- *         - total_db
- *         - total_cr
- *         - ind_origen
- *         - ind_estado
- *         - ind_transmit
- *         - fecha_creacion
- *         - fecha_actualiza
- *         - fecha_afectado
- *         - notas
- *         - p_estado
- *         - id_un
- *         - rowid_auxiliar
- *         - rowid_ccosto
- *         - rowid_fe
- *         - id_co_mov
- *         - valor_db
- *         - valor_cr
- *         - docto_banco
- *         - nro_docto_banco
- *         - id_medios_pago
- *         - valor
- *         - id_banco
- *         - nro_cheque
- *         - nro_cuenta
- *         - cod_seguridad
- *         - nro_autorizacion
- *         - fecha_vcto
- *         - id_cuentas_bancarias
- *         - fecha_consignacion
- *         - rowid_docto_consignacion
- *         - rowid_mov_docto_consignacion
- *         - id_causales_devolucion
- *         - id_sucursal
- *         - p_rowid_docto_letra
- *         - p_id_ubicacion_origen
- *         - p_id_ubicacion_destino
- *         - p_rowid_sa_origen
- *         - p_rowid_sa_destino
- *         - p_id_cuenta_bancaria
+ *         - p_cia
+ *         - p_fecha
+ *         - p_clase_modulo
+ *         - p_rowid_usuario
+ *         - p_id_co
+ *         - p_id_tipo_docto
+ *         - p_numero_docto
+ *         - p_clase_docto
+ *         - p_rowid_tercero
+ *         - p_periodo_docto
+ *         - p_notas
+ *         - p_usuario
+ *         - p_id_caja
+ *         - p_moneda
+ *         - p_valor
+ *         - p_rowid_cobrador
+ *         - p_rowid_fe
+ *         - p_id_un
+ *         - p_id_medio_pago
+ *         - p_id_cta_bancaria
+ *         - p_referencia_med
+ *         - p_rowid_sa
+ *         - p_rowid_sa
  *       properties:
- *         id_cia:
+ *         p_cia:
  *           type: integer
  *           description: ID de la compañía
- *         id_co:
- *           type: string
- *           maxLength: 3
- *           description: ID del centro operativo
- *         id_tipo_docto:
- *           type: string
- *           maxLength: 3
- *           description: ID del tipo de documento
- *         consec_docto:
- *           type: integer
- *           description: Consecutivo del documento
- *         prefijo:
- *           type: string
- *           maxLength: 4
- *           description: Prefijo del documento
- *         fecha:
+ *           example: 1
+ *         p_fecha:
  *           type: string
  *           format: date-time
  *           description: Fecha del documento
- *         periodo:
+ *           example: "2026-01-14T00:00:00Z"
+ *         p_clase_modulo:
  *           type: integer
- *           description: Período contable
- *         rowid_tercero:
+ *           description: Clase del módulo
+ *           example: 2
+ *         p_rowid_usuario:
  *           type: integer
- *           description: RowID del tercero
- *         sucursal:
+ *           description: RowID del usuario
+ *           example: 1133
+ *         p_id_co:
  *           type: string
  *           maxLength: 3
- *           description: Sucursal
- *         total_db:
- *           type: number
- *           format: double
- *           description: Total débito
- *         total_cr:
- *           type: number
- *           format: double
- *           description: Total crédito
- *         ind_origen:
- *           type: integer
- *           description: Indicador de origen
- *         ind_estado:
- *           type: integer
- *           description: Indicador de estado
- *         ind_transmit:
- *           type: integer
- *           description: Indicador de transmisión
- *         fecha_creacion:
+ *           description: ID del centro operativo
+ *           example: "001"
+ *         p_id_tipo_docto:
  *           type: string
- *           format: date-time
- *           description: Fecha de creación
- *         fecha_actualiza:
+ *           maxLength: 3
+ *           description: ID del tipo de documento
+ *           example: "RCC"
+ *         p_numero_docto:
+ *           type: integer
+ *           description: Número del documento
+ *           example: 10583
+ *         p_clase_docto:
+ *           type: integer
+ *           description: Clase del documento
+ *           example: 13
+ *         p_rowid_tercero:
+ *           type: integer
+ *           description: RowID del tercero
+ *           example: 34580
+ *         p_periodo_docto:
+ *           type: integer
+ *           description: Período del documento (formato YYYYMM)
+ *           example: 202601
+ *         p_prefijo:
  *           type: string
- *           format: date-time
- *           description: Fecha de actualización
- *         fecha_afectado:
- *           type: string
- *           format: date-time
- *           description: Fecha afectado
- *         notas:
+ *           maxLength: 4
+ *           description: Prefijo del documento (opcional)
+ *           example: ""
+ *         p_notas:
  *           type: string
  *           maxLength: 255
  *           description: Notas del documento
- *         p_estado:
- *           type: integer
- *           description: Estado para actualizar (requerido para sp_docto_actualizar_estado)
- *         id_un:
+ *           example: "test 001"
+ *         p_usuario:
  *           type: string
- *           description: ID unidad (requerido para sp_mov_docto_insertar)
- *         rowid_auxiliar:
- *           type: integer
- *           description: RowID auxiliar (requerido para sp_mov_docto_insertar y sp_rel_med_pag_insertar)
- *         rowid_ccosto:
- *           type: integer
- *           description: RowID centro de costo (requerido para sp_mov_docto_insertar y sp_rel_med_pag_insertar)
- *         rowid_fe:
- *           type: integer
- *           description: RowID fuente (requerido para sp_mov_docto_insertar y sp_rel_med_pag_insertar)
- *         id_co_mov:
+ *           maxLength: 50
+ *           description: Usuario
+ *           example: "lgarzon"
+ *         p_id_caja:
  *           type: string
  *           maxLength: 3
- *           description: ID centro operativo movimiento (requerido para sp_mov_docto_insertar)
- *         valor_db:
- *           type: number
- *           format: double
- *           description: Valor débito (requerido para sp_mov_docto_insertar)
- *         valor_cr:
- *           type: number
- *           format: double
- *           description: Valor crédito (requerido para sp_mov_docto_insertar)
- *         docto_banco:
- *           type: string
- *           maxLength: 2
- *           description: Documento banco (requerido para sp_mov_docto_insertar)
- *         nro_docto_banco:
- *           type: integer
- *           description: Número documento banco (requerido para sp_mov_docto_insertar)
- *         id_medios_pago:
+ *           description: ID de caja
+ *           example: "001"
+ *         p_moneda:
  *           type: string
  *           maxLength: 3
- *           description: ID medios de pago (requerido para sp_rel_med_pag_insertar)
- *         valor:
+ *           description: Moneda
+ *           example: "COP"
+ *         p_valor:
  *           type: number
  *           format: double
- *           description: Valor (requerido para sp_rel_med_pag_insertar)
- *         id_banco:
+ *           description: Valor del recibo
+ *           example: 1002.00
+ *         p_rowid_cobrador:
+ *           type: integer
+ *           description: RowID del cobrador
+ *           example: 74
+ *         p_rowid_fe:
+ *           type: integer
+ *           description: RowID de fuente
+ *           example: 3
+ *         p_id_un:
+ *           type: string
+ *           maxLength: 3
+ *           description: ID unidad
+ *           example: "99"
+ *         p_id_medio_pago:
  *           type: string
  *           maxLength: 10
- *           description: ID banco (requerido para sp_rel_med_pag_insertar)
- *         nro_cheque:
- *           type: integer
- *           description: Número cheque (requerido para sp_rel_med_pag_insertar)
- *         nro_cuenta:
- *           type: string
- *           maxLength: 25
- *           description: Número cuenta (requerido para sp_rel_med_pag_insertar)
- *         cod_seguridad:
- *           type: string
- *           maxLength: 3
- *           description: Código seguridad (requerido para sp_rel_med_pag_insertar)
- *         nro_autorizacion:
+ *           description: ID medio de pago
+ *           example: "CG1"
+ *         p_id_cta_bancaria:
  *           type: string
  *           maxLength: 10
- *           description: Número autorización (requerido para sp_rel_med_pag_insertar)
- *         fecha_vcto:
+ *           description: ID cuenta bancaria
+ *           example: "27"
+ *         p_referencia_med:
  *           type: string
- *           maxLength: 8
- *           description: Fecha vencimiento (requerido para sp_rel_med_pag_insertar)
- *         id_cuentas_bancarias:
- *           type: string
- *           maxLength: 3
- *           description: ID cuentas bancarias (requerido para sp_rel_med_pag_insertar)
- *         fecha_consignacion:
- *           type: string
- *           format: date-time
- *           description: Fecha consignación (requerido para sp_rel_med_pag_insertar)
- *         rowid_docto_consignacion:
+ *           maxLength: 50
+ *           description: Referencia del medio de pago
+ *           example: "20260114"
+ *         p_rowid_sa:
  *           type: integer
- *           description: RowID documento consignación (requerido para sp_rel_med_pag_insertar)
- *         rowid_mov_docto_consignacion:
- *           type: integer
- *           description: RowID movimiento documento consignación (requerido para sp_rel_med_pag_insertar)
- *         id_causales_devolucion:
- *           type: string
- *           maxLength: 3
- *           description: ID causales devolución (requerido para sp_rel_med_pag_insertar)
- *         id_sucursal:
- *           type: string
- *           maxLength: 3
- *           description: ID sucursal (requerido para sp_rel_med_pag_insertar)
- *         p_rowid_docto_letra:
- *           type: integer
- *           description: RowID documento letra (requerido para sp_let_movto_adicionar)
- *         p_id_ubicacion_origen:
- *           type: string
- *           maxLength: 3
- *           description: ID ubicación origen (requerido para sp_let_movto_adicionar)
- *         p_id_ubicacion_destino:
- *           type: string
- *           maxLength: 3
- *           description: ID ubicación destino (requerido para sp_let_movto_adicionar)
- *         p_rowid_sa_origen:
- *           type: integer
- *           description: RowID SA origen (requerido para sp_let_movto_adicionar)
- *         p_rowid_sa_destino:
- *           type: integer
- *           description: RowID SA destino (requerido para sp_let_movto_adicionar)
- *         p_id_cuenta_bancaria:
- *           type: string
- *           maxLength: 3
- *           description: ID cuenta bancaria (requerido para sp_let_movto_adicionar)
+ *           description: RowID SA
+ *           example: 264651
  *     ReciboCajaResponse:
  *       type: object
  *       properties:
@@ -295,15 +202,10 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *   post:
  *     summary: Procesar recibo de caja
  *     description: |
- *       Ejecuta una secuencia de 5 stored procedures de forma secuencial para procesar un recibo de caja.
- *       Los procedimientos se ejecutan en el siguiente orden:
- *       1. sp_docto_insertar - Inserta el documento
- *       2. sp_mov_docto_insertar - Inserta el movimiento del documento
- *       3. sp_rel_med_pag_insertar - Inserta la relación de medios de pago
- *       4. sp_let_movto_adicionar - Adiciona movimiento de letra
- *       5. sp_docto_actualizar_estado - Actualiza el estado del documento
- *       
- *       Si alguno de los procedimientos falla, se hace rollback de toda la transacción.
+ *       Ejecuta un script SQL completo para procesar un recibo de caja. El script ejecuta una secuencia
+ *       de stored procedures que incluyen validaciones, inserción de documento, movimientos contables,
+ *       medios de pago y actualización de estado. Si alguno de los procedimientos falla, se hace rollback
+ *       de toda la transacción.
  *     tags: [Recibo de Caja]
  *     requestBody:
  *       required: true
@@ -312,54 +214,29 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *           schema:
  *             $ref: '#/components/schemas/ReciboCajaRequest'
  *           example:
- *             id_cia: 1
- *             id_co: "001"
- *             id_tipo_docto: "RC"
- *             consec_docto: 12345
- *             prefijo: "RC"
- *             fecha: "2025-12-23T10:00:00Z"
- *             periodo: 202512
- *             rowid_tercero: 34580
- *             sucursal: "001"
- *             total_db: 1000000
- *             total_cr: 1000000
- *             ind_origen: 1
- *             ind_estado: 1
- *             ind_transmit: 0
- *             fecha_creacion: "2025-12-23T10:00:00Z"
- *             fecha_actualiza: "2025-12-23T10:00:00Z"
- *             fecha_afectado: "2025-12-23T10:00:00Z"
- *             notas: "Recibo de caja de prueba"
- *             p_estado: 1
- *             id_un: "UN001"
- *             rowid_auxiliar: 1
- *             rowid_ccosto: 1
- *             rowid_fe: 1
- *             id_co_mov: "001"
- *             valor_db: 1000000
- *             valor_cr: 1000000
- *             docto_banco: "01"
- *             nro_docto_banco: 12345
- *             id_medios_pago: "EF"
- *             valor: 1000000
- *             id_banco: "BANCO001"
- *             nro_cheque: 12345
- *             nro_cuenta: "123456789"
- *             cod_seguridad: "123"
- *             nro_autorizacion: "AUTH001"
- *             fecha_vcto: "20251231"
- *             id_cuentas_bancarias: "001"
- *             fecha_consignacion: "2025-12-23T10:00:00Z"
- *             rowid_docto_consignacion: 0
- *             rowid_mov_docto_consignacion: 0
- *             id_causales_devolucion: ""
- *             id_sucursal: "001"
- *             p_rowid_docto_letra: 0
- *             p_id_ubicacion_origen: "001"
- *             p_id_ubicacion_destino: "002"
- *             p_rowid_sa_origen: 0
- *             p_rowid_sa_destino: 0
- *             p_id_cuenta_bancaria: "001"
+ *             p_cia: 1
+ *             p_fecha: "2026-01-14T00:00:00Z"
+ *             p_clase_modulo: 2
+ *             p_rowid_usuario: 1133
+ *             p_id_co: "001"
+ *             p_id_tipo_docto: "RCC"
+ *             p_numero_docto: 10583
+ *             p_clase_docto: 13
+ *             p_rowid_tercero: 34580
+ *             p_periodo_docto: 202601
+ *             p_prefijo: ""
+ *             p_notas: "test 001"
+ *             p_usuario: "lgarzon"
+ *             p_id_caja: "001"
+ *             p_moneda: "COP"
+ *             p_valor: 1002.00
+ *             p_rowid_cobrador: 74
+ *             p_rowid_fe: 3
+ *             p_id_un: "99"
+ *             p_id_medio_pago: "CG1"
+ *             p_id_cta_bancaria: "27"
+ *             p_referencia_med: "20260114"
+ *             p_rowid_sa: null
  *     responses:
  *       200:
  *         description: Recibo de caja procesado exitosamente
@@ -370,26 +247,7 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *             example:
  *               success: true
  *               message: "Recibo de caja procesado exitosamente"
- *               data:
- *                 sp_docto_insertar:
- *                   p_rowid: 12345
- *                   p_timestamp: "2024-01-15T10:00:00Z"
- *                 sp_mov_docto_insertar:
- *                   RowId: 67890
- *                 sp_rel_med_pag_insertar:
- *                   p_rowid: 11111
- *                 sp_let_movto_adicionar:
- *                   p_error: 0
- *                   p_des_error: null
- *                   p_des_error2: null
- *                 sp_docto_actualizar_estado:
- *                   p_error: 0
- *                   p_des_error: null
- *                   p_id_cia: 1
- *                   p_id_co: "001"
- *                   p_id_tipo_docto: "RC"
- *                   p_numero_docto: 12345
- *                   p_ind_cfdi: 0
+ *               data: []
  *       400:
  *         description: Error en los parámetros de entrada
  *         content:
@@ -402,7 +260,7 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Parámetros requeridos faltantes"
+ *                   example: "Parámetros requeridos faltantes: p_cia, p_fecha"
  *       500:
  *         description: Error al procesar el recibo de caja
  *         content:
@@ -415,9 +273,107 @@ const reciboCajaController = require('../controllers/recibo-caja.controller');
  *                   example: false
  *                 message:
  *                   type: string
- *                   example: "Error en sp_docto_insertar: [mensaje de error]"
+ *                   example: "Error ejecutando script SQL: [mensaje de error]"
  */
-router.post('/procesar', reciboCajaController.procesarReciboCaja);
+router.post("/procesar", reciboCajaController.procesarReciboCaja);
+
+/**
+ * @swagger
+ * /api/recibo-caja/proximo-consecutivo:
+ *   get:
+ *     summary: Consultar consecutivo siguiente de recibos de caja
+ *     description: Consulta el próximo consecutivo disponible para un tipo de recibo de caja mediante el stored procedure sp_tipo_docto_leer_proximo
+ *     tags:
+ *       - Recibo de Caja
+ *     parameters:
+ *       - in: query
+ *         name: id_cia
+ *         required: true
+ *         schema:
+ *           type: integer
+ *           example: 1
+ *         description: ID de compañía
+ *       - in: query
+ *         name: id_tipo_docto
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: RCC
+ *         description: Tipo de documento
+ *       - in: query
+ *         name: id_co
+ *         required: true
+ *         schema:
+ *           type: string
+ *           example: "001"
+ *         description: Centro de operación
+ *       - in: query
+ *         name: p_bloquear
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *           enum: [0, 1]
+ *         description: 0 solo consulta, 1 bloquea
+ *       - in: query
+ *         name: p_leer_mandato_tipo
+ *         required: false
+ *         schema:
+ *           type: integer
+ *           default: 0
+ *         description: 0 para documento estándar
+ *     responses:
+ *       200:
+ *         description: Respuesta exitosa con el consecutivo siguiente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 proximoConsecutivo:
+ *                   type: object
+ *                   description: Información devuelta por el SP
+ *                 p_ind_mandato_tipo:
+ *                   type: integer
+ *                   description: Indicador mandato tipo
+ *             examples:
+ *               ejemplo1:
+ *                 value:
+ *                   success: true
+ *                   proximoConsecutivo:
+ *                     consecutivo: 68434
+ *                   p_ind_mandato_tipo: 0
+ *       400:
+ *         description: Error de parámetros o consulta
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Parámetros requeridos faltantes"
+ *       500:
+ *         description: Error del servidor o de la base de datos
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: false
+ *                 message:
+ *                   type: string
+ *                   example: "Error al ejecutar sp_tipo_docto_leer_proximo"
+ */
+router.get("/proximo-consecutivo", reciboCajaController.getProximoConsecutivoRC);
 
 module.exports = router;
 

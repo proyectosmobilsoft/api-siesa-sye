@@ -7,516 +7,728 @@ const sql = require('mssql');
  */
 
 /**
- * Ejecuta la secuencia completa de stored procedures para crear un recibo de caja
- * @param {Object} params - Parámetros para todos los stored procedures
- * @returns {Promise<Object>} - Resultado de la ejecución con los valores de salida
+ * Obtiene el próximo consecutivo disponible para un tipo de documento
+ * @param {Object} params - Parámetros para sp_tipo_docto_leer_proximo
+ * @returns {Promise<Object>} - Resultado con el próximo consecutivo
+ */
+async function leerProximoConsecutivoRC({ id_cia, id_tipo_docto, id_co, p_bloquear = 0, p_leer_mandato_tipo = 0 }) {
+  const pool = await getPool();
+  const request = new sql.Request(pool);
+
+  request.input('id_cia', sql.SmallInt, id_cia);
+  request.input('id_tipo_docto', sql.Char(3), id_tipo_docto);
+  request.input('id_co', sql.Char(3), id_co);
+  request.input('p_bloquear', sql.SmallInt, p_bloquear);
+  request.input('p_leer_mandato_tipo', sql.SmallInt, p_leer_mandato_tipo);
+  request.output('p_ind_mandato_tipo', sql.SmallInt);
+
+  const result = await request.execute('sp_tipo_docto_leer_proximo');
+
+  return {
+    success: true,
+    proximoConsecutivo: result.recordset && result.recordset[0] || {},
+    p_ind_mandato_tipo: result.output.p_ind_mandato_tipo
+  };
+}
+
+/**
+ * Función auxiliar para escapar strings SQL
+ */
+function escapeSQLString(value) {
+  if (value === null || value === undefined) return 'NULL';
+  if (typeof value === 'string') {
+    return `N'${value.replace(/'/g, "''")}'`;
+  }
+  return value;
+}
+
+/**
+ * Función auxiliar para formatear fecha a DATETIME de SQL Server
+ */
+function formatSQLDateTime(dateValue) {
+  if (!dateValue) return 'NULL';
+  const date = new Date(dateValue);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  return `'${year}-${month}-${day} ${hours}:${minutes}:${seconds}'`;
+}
+
+/**
+ * Ejecuta el script SQL completo para procesar un recibo de caja
+ * @param {Object} params - Parámetros del request body
+ * @returns {Promise<Object>} - Resultado de la ejecución
  */
 async function procesarReciboCaja(params) {
-  // Validar TODOS los parámetros requeridos de todos los stored procedures
-  const allRequiredParams = [
-    // sp_docto_insertar
-    'id_cia', 'id_co', 'id_tipo_docto', 'consec_docto', 'fecha',
-    'periodo', 'rowid_tercero', 'total_db', 'total_cr',
-    'ind_origen', 'ind_estado', 'ind_transmit', 'fecha_creacion',
-    'fecha_actualiza', 'fecha_afectado', 'notas', 'p_estado',
-    // sp_mov_docto_insertar
-    'id_un', 'rowid_auxiliar', 'rowid_ccosto', 'rowid_fe', 'id_co_mov',
-    'valor_db', 'valor_cr', 'docto_banco', 'nro_docto_banco',
-    // sp_rel_med_pag_insertar
-    'id_medios_pago', 'valor', 'id_banco', 'nro_cheque', 'nro_cuenta',
-    'cod_seguridad', 'nro_autorizacion', 'fecha_vcto', 'id_cuentas_bancarias',
-    'fecha_consignacion', 'rowid_docto_consignacion', 'rowid_mov_docto_consignacion',
-    'id_causales_devolucion',
-    // sp_let_movto_adicionar
-    'p_rowid_docto_letra', 'p_id_ubicacion_origen', 'p_id_ubicacion_destino',
-    'p_rowid_sa_origen', 'p_rowid_sa_destino', 'p_id_cuenta_bancaria'
+  console.log("params", params);
+  
+  // Validar parámetros requeridos básicos
+  const requiredParams = [
+    'p_cia', 'p_fecha', 'p_clase_modulo', 'p_rowid_usuario',
+    'p_id_co', 'p_id_tipo_docto', 'p_numero_docto', 'p_clase_docto',
+    'p_rowid_tercero', 'p_periodo_docto', 'p_notas', 'p_usuario',
+    'p_id_caja', 'p_moneda', 'p_valor', 'p_rowid_cobrador',
+    'p_rowid_fe', 'p_id_un', 'p_id_medio_pago', 'p_id_cta_bancaria',
+    'p_referencia_med', 'p_rowid_sa'
   ];
   
-  // Parámetros que pueden ser strings vacíos (opcionales pero deben estar presentes)
-  const paramsThatCanBeEmpty = ['id_causales_devolucion', 'sucursal', 'id_sucursal'];
-  
-  const missingParams = allRequiredParams.filter(param => {
-    if (paramsThatCanBeEmpty.includes(param)) {
-      // Para estos parámetros, solo validar que existan (pueden ser strings vacíos)
-      return params[param] === undefined || params[param] === null;
-    }
-    // Para el resto, validar que no estén vacíos
-    return params[param] === undefined || params[param] === null || params[param] === '';
-  });
+  const missingParams = requiredParams.filter(param => 
+    params[param] === undefined || params[param] === null || params[param] === ''
+  );
   
   if (missingParams.length > 0) {
     throw new Error(`Parámetros requeridos faltantes: ${missingParams.join(', ')}`);
   }
+
+  // Preparar valores para el script SQL
+  const p_prefijo = params.p_prefijo || '';
+  
+  // Formatear fecha
+  const fechaSQL = formatSQLDateTime(params.p_fecha);
   
   const pool = await getPool();
-  const transaction = new sql.Transaction(pool);
+  const request = pool.request();
+  request.timeout = 180000; // 3 minutos para scripts complejos
+  
+  // Construir el script SQL reemplazando las variables DECLARE
+  const sqlScript = `
+    /* =====================================================
+      VARIABLES DE ENTRADA
+      ===================================================== */
+    DECLARE @p_cia SMALLINT = ${params.p_cia};
+    DECLARE @p_fecha DATETIME = ${fechaSQL};
+    DECLARE @p_clase_modulo SMALLINT = ${params.p_clase_modulo};
+    DECLARE @p_rowid_usuario INT = ${params.p_rowid_usuario};
+
+    DECLARE @p_id_co NVARCHAR(3) = ${escapeSQLString(params.p_id_co)};
+    DECLARE @p_id_tipo_docto NVARCHAR(3) = ${escapeSQLString(params.p_id_tipo_docto)};
+    DECLARE @p_numero_docto INT = ${params.p_numero_docto};
+    DECLARE @p_clase_docto SMALLINT = ${params.p_clase_docto};
+    DECLARE @p_rowid_tercero INT = ${params.p_rowid_tercero};
+    DECLARE @p_periodo_docto INT = ${params.p_periodo_docto};
+    DECLARE @p_prefijo NVARCHAR(4) = ${escapeSQLString(p_prefijo)};
+    DECLARE @p_notas NVARCHAR(255) = ${escapeSQLString(params.p_notas)};
+    DECLARE @p_usuario NVARCHAR(50) = ${escapeSQLString(params.p_usuario)};
+
+    DECLARE @p_id_caja NVARCHAR(3) = ${escapeSQLString(params.p_id_caja)};
+    DECLARE @p_moneda NVARCHAR(3) = ${escapeSQLString(params.p_moneda)};
+    DECLARE @p_valor DECIMAL(18,4) = ${params.p_valor};
+    DECLARE @p_rowid_cobrador INT = ${params.p_rowid_cobrador};
+    DECLARE @p_rowid_fe INT = ${params.p_rowid_fe};
+    DECLARE @p_id_un NVARCHAR(3) = ${escapeSQLString(params.p_id_un)};
+
+    DECLARE @p_id_medio_pago NVARCHAR(10) = ${escapeSQLString(params.p_id_medio_pago)};
+    DECLARE @p_id_cta_bancaria NVARCHAR(10) = ${escapeSQLString(params.p_id_cta_bancaria)};
+    DECLARE @p_referencia_med NVARCHAR(50) = ${escapeSQLString(params.p_referencia_med)};
+    DECLARE @p_rowid_sa INT = ${params.p_rowid_sa}; --264651  ID DE SALDO ABIERTO
+
+    /* =====================================================
+      VARIABLES DE CONTROL
+      ===================================================== */
+    DECLARE 
+        @v_error INT = 0,
+        @v_deserror NVARCHAR(255) = '',
+        @v_periodo INT,
+        @v_rowid_docto INT,
+        @v_timestamp DATETIME;
+
+    /* =====================================================
+      OUTPUT VALIDACIÓN DOCTO
+      ===================================================== */
+    DECLARE
+        @v_ind_prefijo SMALLINT,
+        @v_id_moneda_local NVARCHAR(3),
+        @v_clase_agrupa SMALLINT,
+        @v_clase_sin SMALLINT,
+        @v_clase_modulo_out SMALLINT,
+        @v_num_real INT,
+        @v_ind_clase_aut SMALLINT,
+        @v_dec_total SMALLINT,
+        @v_ind_contable SMALLINT;
+
+    /* =====================================================
+      OUTPUT MEDIO DE PAGO
+      ===================================================== */
+    DECLARE
+        @v_tipo_medio SMALLINT,
+        @v_rowid_aux_bancos INT,
+        @v_id_auxiliar NVARCHAR(15),
+        @v_id_moneda_auxiliar NVARCHAR(3),
+        @v_ind_aux_orden SMALLINT,
+        @v_descripcion_mp NVARCHAR(40),
+        @v_rowid_rel_mp INT;
+
+    /* =====================================================
+      OUTPUT ACTUALIZAR ESTADO
+      ===================================================== */
+    DECLARE
+        @v_id_cia_out SMALLINT,
+        @v_id_co_out NVARCHAR(3),
+        @v_id_tipo_docto_out NVARCHAR(3),
+        @v_numero_docto_out INT,
+        @v_ind_cfdi_out SMALLINT;
+
+    BEGIN TRY
+        BEGIN TRAN;
+
+        /* =============================
+          1. PERIODO
+          ============================= */
+        EXEC sp_periodo_dada_fecha
+            @p_cia,
+            @p_fecha,
+            @v_periodo OUTPUT;
+
+        /* =============================
+          2. VALIDAR FECHA
+          ============================= */
+        EXEC sp_fechas_val_fecha_x_mod
+            @p_cia,
+            @p_clase_modulo,
+            -1,
+            @p_fecha,
+            1,
+            @v_error OUTPUT,
+            @v_deserror OUTPUT;
+
+        IF @v_error <> 0 THROW 50001, @v_deserror, 1;
+
+        /* =============================
+          3. VALIDAR DOCUMENTO
+          ============================= */
+        EXEC sp_docto_validar
+            @p_ind_adicion = -1,
+            @p_cia = @p_cia,
+            @p_id_co = @p_id_co,
+            @p_id_tipo_docto = @p_id_tipo_docto,
+            @p_numero_docto = @p_numero_docto,
+            @p_fecha = @p_fecha,
+            @p_rowid_tercero = @p_rowid_tercero,
+            @p_periodo_docto = @p_periodo_docto,
+            @p_clase_docto = @p_clase_docto,
+            @p_rowid_usuario = @p_rowid_usuario,
+            @p_periodo = @v_periodo OUTPUT,
+            @p_ind_prefijo_docto = @v_ind_prefijo OUTPUT,
+            @p_id_moneda_local = @v_id_moneda_local OUTPUT,
+            @p_clase_ind_agrupa_movtos = @v_clase_agrupa OUTPUT,
+            @p_clase_ind_sin_movtos = @v_clase_sin OUTPUT,
+            @p_clase_modulo = @v_clase_modulo_out OUTPUT,
+            @p_numero_docto_real = @v_num_real OUTPUT,
+            @p_prefijo = @p_prefijo OUTPUT,
+            @p_error = @v_error OUTPUT,
+            @p_deserror = @v_deserror OUTPUT,
+            @p_id_mandato = NULL,
+            @p_ind_clase_aut = @v_ind_clase_aut OUTPUT,
+            @p_seg_man_perm_dif_co = 1,
+            @p_dec_total_local = @v_dec_total OUTPUT,
+            @p_ind_importacion_remota = 0,
+            @p_ind_docto_contable = @v_ind_contable OUTPUT,
+            @p_rowid_docto_rp = NULL,
+            @p_id_proyecto = NULL;
+
+        IF @v_error <> 0 THROW 50002, @v_deserror, 1;
+
+        /* =============================
+          4. INSERTAR DOCUMENTO
+          ============================= */
+        EXEC sp_docto_insertar
+            @id_cia = @p_cia,
+            @id_co = @p_id_co,
+            @id_tipo_docto = @p_id_tipo_docto,
+            @consec_docto = @p_numero_docto,
+            @prefijo = @p_prefijo,
+            @fecha = @p_fecha,
+            @periodo = @p_periodo_docto,
+            @rowid_tercero = @p_rowid_tercero,
+            @sucursal = N'',
+            @total_db = 0,
+            @total_cr = 0,
+            @ind_origen = @p_clase_docto,
+            @ind_estado = 0,
+            @ind_transmit = 0,
+            @fecha_creacion = @p_fecha,
+            @fecha_actualiza = @p_fecha,
+            @fecha_afectado = @p_fecha,
+            @notas = @p_notas,
+            @usuariocreacion = @p_usuario,
+            @p_rowid = @v_rowid_docto OUTPUT,
+            @p_rowid_docto_base = NULL,
+            @p_timestamp = @v_timestamp OUTPUT,
+            @p_referencia = N'',
+            @p_id_mandato = NULL,
+            @p_rowid_movto_entidad = NULL,
+            @p_id_tipo_cambio = NULL,
+            @p_tasa_conv = 0,
+            @p_tasa_local = 0,
+            @p_id_moneda_docto = NULL,
+            @p_id_moneda_conv = NULL,
+            @p_ind_forma_conv = 0,
+            @p_id_moneda_local = NULL,
+            @p_ind_forma_local = 0,
+            @p_rowid_te_plantilla = NULL,
+            @p_rowid_sesion = 365008,
+            @p_ind_tipo_origen = 0,
+            @p_rowid_docto_rp = NULL,
+            @p_id_proyecto = NULL,
+            @p_ind_dif_cambio_forma = 0,
+            @p_ind_clase_origen = 0;
+
+        /* =============================
+          5. VALIDAR INGRESO CAJA
+          ============================= */
+        EXEC sp_ingre_caja_validar
+            @p_id_cia = @p_cia,
+            @p_rowid_docto = @v_rowid_docto,
+            @p_id_co = @p_id_co,
+            @p_id_tipo_docto = @p_id_tipo_docto,
+            @p_consecutivo = @p_numero_docto,
+            @p_fecha_elaboracion = @p_fecha,
+            @p_fecha_recaudo = @p_fecha,
+            @p_id_caja = @p_id_caja,
+            @p_rowid_tercero = @p_rowid_tercero,
+            @p_referencia = N'',
+            @p_ind_valida_medPag = 1,
+            @p_moneda_recaudo = @p_moneda,
+            @p_moneda_aplicar = @p_moneda,
+            @p_valor_recaudo = @p_valor,
+            @p_valor_aplicar_real = @p_valor,
+            @p_rowid_cobrador = @p_rowid_cobrador,
+            @p_id_un = @p_id_un,
+            @p_rowid_ccosto = NULL,
+            @p_rowid_fe = @p_rowid_fe,
+            @p_notas = @p_notas,
+            @p_nro_error = @v_error OUTPUT,
+            @p_desc_error = @v_deserror OUTPUT;
+
+        IF @v_error <> 0 THROW 50003, @v_deserror, 1;
+
+        /* =============================
+          6. INSERTAR INGRESO CAJA
+          ============================= */
+        EXEC sp_ingre_caja_insertar
+            @id_cia = @p_cia,
+            @rowid_docto = @v_rowid_docto,
+            @fecha_elaboracion = @p_fecha,
+            @fecha_recaudo = @p_fecha,
+            @rowid_cobrador = @p_rowid_cobrador,
+            @moneda_rc = @p_moneda,
+            @valor_rc = @p_valor,
+            @moneda_aplicar = @p_moneda,
+            @valor_conversion = @p_valor,
+            @valor_aplicar_real = @p_valor,
+            @rowid_fe = @p_rowid_fe,
+            @rowid_ccosto = NULL,
+            @id_un = @p_id_un,
+            @id_co = @p_id_co,
+            @id_caja = @p_id_caja,
+            @notas = @p_notas,
+            @p_referencia = N'',
+            @p_id_sucursal_filtro = NULL,
+            @p_rowid_auxiliar_filtro = NULL,
+            @p_id_co_filtro = @p_id_co,
+            @p_id_un_filtro = NULL,
+            @p_ind_presenta_neg_filtro = 0,
+            @p_id_tipo_docto_filtro = NULL,
+            @p_fecha_ini_filtro = NULL,
+            @p_fecha_fin_filtro = NULL,
+            @p_num_ini_filtro = NULL,
+            @p_num_fin_filtro = NULL,
+            @p_ind_valida_medPag = 1,
+            @p_rowid_tcro_filtro = NULL,
+            @p_ind_orden_proc = 1;
+
+        /* =============================
+          7. VALIDAR MEDIO DE PAGO
+          ============================= */
+        EXEC sp_rel_med_pag_validar
+            @p_cia = @p_cia,
+            @p_id_medio_pago = @p_id_medio_pago,
+            @p_id_cta_bancaria = @p_id_cta_bancaria,
+            @p_rowid_auxiliar = 1,
+            @p_id_co = @p_id_co,
+            @p_id_caja = @p_id_caja,
+            @p_rowid_usuario = @p_rowid_usuario,
+            @p_tipo_medio = @v_tipo_medio OUTPUT,
+            @p_rowid_aux_bancos = @v_rowid_aux_bancos OUTPUT,
+            @p_id_auxiliar = @v_id_auxiliar OUTPUT,
+            @p_id_moneda_auxiliar = @v_id_moneda_auxiliar OUTPUT,
+            @p_error = @v_error OUTPUT,
+            @p_rowid_docto = @v_rowid_docto,
+            @p_fecha_cg_posf = @p_fecha,
+            @p_ind_aux_orden = @v_ind_aux_orden OUTPUT,
+            @p_valor = @p_valor,
+            @p_vlr_impto_tarjeta = 0,
+            @p_descripcion = @v_descripcion_mp OUTPUT;
+
+        IF @v_error <> 0 THROW 50004, @v_deserror, 1;
+
+        /* =============================
+          8. INSERTAR MEDIO DE PAGO
+          ============================= */
+        EXEC sp_rel_med_pag_insertar
+            @id_cia = @p_cia,
+            @rowid_docto = @v_rowid_docto,
+            @rowid_mov_docto = NULL,
+            @rowid_auxiliar = @v_rowid_aux_bancos,
+            @rowid_ccosto = NULL,
+            @rowid_fe = @p_rowid_fe,
+            @id_co = @p_id_co,
+            @id_un = @p_id_un,
+            @id_medios_pago = @p_id_medio_pago,
+            @ind_estado = 0,
+            @valor = @p_valor,
+            @valor_alterna = 0,
+            @id_banco = NULL,
+            @nro_cheque = NULL,
+            @nro_cuenta = NULL,
+            @cod_seguridad = NULL,
+            @nro_autorizacion = NULL,
+            @fecha_vcto = NULL,
+            @notas = N'',
+            @id_cuentas_bancarias = @p_id_cta_bancaria,
+            @fecha_consignacion = @p_fecha,
+            @rowid_docto_consignacion = @v_rowid_docto,
+            @rowid_mov_docto_consignacion = NULL,
+            @id_causales_devolucion = NULL,
+            @rowid_tercero = NULL,
+            @id_sucursal = NULL,
+            @p_id_caja = @p_id_caja,
+            @p_id_moneda = @p_moneda,
+            @p_ind_tipo_medio = @v_tipo_medio,
+            @p_referencia_otros = @p_referencia_med,
+            @p_valor_cr = 0,
+            @p_valor_cr_alt = 0,
+            @p_ind_cambio = 0,
+            @p_NroAltDoctoBanco = N'',
+            @p_rowid = @v_rowid_rel_mp OUTPUT,
+            @p_ind_aux_orden = @v_ind_aux_orden,
+            @p_id_cta_bancaria_cg = NULL,
+            @p_referencia_cg = N'',
+            @p_rowid_ccosto_cg = NULL,
+            @p_fecha_cg_cg = NULL,
+            @p_nro_docto_alterno_cg = N'',
+            @p_ind_liquida_tarjeta = 0,
+            @p_vlr_impto_tarjeta = 0,
+            @p_vlr_impto_tarjeta_alt = 0,
+            @p_fecha_elab_cheq_postf = NULL,
+            @p_docto_banco = N'CG';
+
+
+        --------------------------------------------------
+    -- 112 MOVIMIENTO DB (CAJA / BANCO)
+    --------------------------------------------------
+    DECLARE 
+        @mv_id_aux NVARCHAR(20)=N'11100522            ',
+        @mv_id_ccosto NVARCHAR(15)=N'',
+        @mv_id_fe NVARCHAR(10)=N'',
+        @mv_id_ter NVARCHAR(15)=N'',
+        @mv_err INT,
+        @mv_desc NVARCHAR(40);
+
+    EXEC sp_mov_docto_validar
+        @p_ind_adicion=-1,@p_clase_docto=13,@p_cia=1,
+        @p_rowid_auxiliar=2023,@p_id_co=@p_id_co,
+        @p_id_un=@p_id_un,@p_rowid_tercero=NULL,
+        @p_id_sucursal=NULL,@p_rowid_ccosto=NULL,
+        @p_rowid_fe=3,@p_rowid_usuario=@p_rowid_usuario,
+        @p_periodo=@p_periodo_docto,
+        @p_id_auxiliar=@mv_id_aux OUTPUT,
+        @p_id_ccosto=@mv_id_ccosto OUTPUT,
+        @p_id_fe=@mv_id_fe OUTPUT,
+        @p_id_tercero=@mv_id_ter OUTPUT,
+        @p_error=@mv_err OUTPUT,
+        @p_rowid_rubro=NULL,
+        @p_desc_clase_docto=@mv_desc OUTPUT;
+
+    IF @mv_err <> 0 THROW 50010,'Error mov débito',1;
+
+    DECLARE @rowid_mov_db INT;
+
+    EXEC sp_mov_docto_insertar
+        @id_cia=1,@rowid_docto=@v_rowid_docto,@id_un=@p_id_un,
+        @rowid_auxiliar=2023,@rowid_tercero=NULL,
+        @sucursal=NULL,@rowid_ccosto=NULL,@rowid_fe=3,
+        @id_co_mov=@p_id_co,@fecha=@p_fecha,@periodo=@p_periodo_docto,
+        @ind_estado=0,@valor_db=@p_valor,@valor_cr=0,
+        @valor_db_alt=0,@valor_cr_alt=0,@base_gravable=0,
+        @docto_banco=N'CG',@nro_docto_banco=20260113,
+        @ind_mov_sa=0,@ind_mov_diferido=0,@notas=@p_notas,
+        @RowId=@rowid_mov_db OUTPUT,
+        @IndAutomatico=1,@ind_mov_caja=0,
+        @p_rowid_sesion=365008;
+
+      --------------------------------------------------
+    -- MOVIMIENTO FE (DESPUÉS DEL DÉBITO)
+    --------------------------------------------------
+    DECLARE @v_rowid_movto_fe INT;
+
+    EXEC sp_movto_fe_insertar
+        @p_rowid = @v_rowid_movto_fe OUTPUT,
+        @p_ts = '1753-01-01 00:00:00',
+        @p_id_cia = @p_cia,
+        @p_rowid_movto = @rowid_mov_db,   -- ?? ESTE ES EL ROWID DEL MOV DB
+        @p_rowid_fe = @p_rowid_fe,        -- FE = 3
+        @p_fecha = @p_fecha,
+        @p_id_periodo = @p_periodo_docto,
+        @p_valor_db = @p_valor,
+        @p_valor_cr = 0,
+        @p_valor_db_alt = 0,
+        @p_valor_cr_alt = 0,
+        @p_valor_db2 = @p_valor,
+        @p_valor_cr2 = 0,
+        @p_valor_db_alt2 = 0,
+        @p_valor_cr_alt2 = 0,
+        @p_valor_db3 = @p_valor,
+        @p_valor_cr3 = 0,
+        @p_valor_db_alt3 = 0,
+        @p_valor_cr_alt3 = 0;
+
+    --------------------------------------------------
+    -- 127 MOVIMIENTO CR (TERCERO)
+    --------------------------------------------------
+    DECLARE 
+        @mv2_id_aux NVARCHAR(20)=N'13050501            ',
+        @mv2_id_ter NVARCHAR(15)=N'802012745      ',
+        @mv2_err INT,@mv2_desc NVARCHAR(40);
+
+    EXEC sp_mov_docto_validar
+        @p_ind_adicion=-1,@p_clase_docto=13,@p_cia=1,
+        @p_rowid_auxiliar=9,@p_id_co=@p_id_co,
+        @p_id_un=@p_id_un,@p_rowid_tercero=@p_rowid_tercero,
+        @p_id_sucursal=N'001',@p_rowid_ccosto=NULL,
+        @p_rowid_fe=NULL,@p_rowid_usuario=@p_rowid_usuario,
+        @p_periodo=@p_periodo_docto,
+        @p_id_auxiliar=@mv2_id_aux OUTPUT,
+        @p_id_ccosto=NULL,@p_id_fe=NULL,
+        @p_id_tercero=@mv2_id_ter OUTPUT,
+        @p_error=@mv2_err OUTPUT,
+        @p_rowid_rubro=NULL,
+        @p_desc_clase_docto=@mv2_desc OUTPUT;
+
+    IF @mv2_err <> 0 THROW 50011,'Error mov crédito',1;
+
+    DECLARE @rowid_mov_cr INT;
+
+    EXEC sp_mov_docto_insertar
+        @id_cia=1,@rowid_docto=@v_rowid_docto,@id_un=@p_id_un,
+        @rowid_auxiliar=9,@rowid_tercero=@p_rowid_tercero,
+        @sucursal=N'001',@rowid_ccosto=NULL,@rowid_fe=NULL,
+        @id_co_mov=@p_id_co,@fecha=@p_fecha,@periodo=@p_periodo_docto,
+        @ind_estado=0,@valor_db=0,@valor_cr=@p_valor,
+        @valor_db_alt=0,@valor_cr_alt=0,@base_gravable=0,
+        @docto_banco=N'',@nro_docto_banco=0,
+        @ind_mov_sa=1,@ind_mov_diferido=0,@notas=@p_notas,
+        @RowId=@rowid_mov_cr OUTPUT,
+        @IndAutomatico=1,@ind_mov_caja=0,
+        @p_rowid_sesion=365008;
+
+      --------------------------------------------------
+    -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO)
+    --------------------------------------------------
+    DECLARE 
+        @v_error_sa INT,
+        @v_desc_error_sa NVARCHAR(255);
+
+    EXEC sp_sa_cancelar
+        @rowidsa = @p_rowid_sa,                 -- 264651 (obtenido previamente)
+        @fecha = @p_fecha,
+        @total_db = 0,
+        @total_cr = 0,
+        @total_db_alt = 0,
+        @total_cr_alt = 0,
+        @total_db_pendientes = 0,
+        @total_cr_pendientes = @p_valor,
+        @total_db_alt_pendientes = 0,
+        @total_cr_alt_pendientes = 0,
+        @chequesposfechados = 0,
+        @p_total_db2_pendientes = 0,
+        @p_total_cr2_pendientes = @p_valor,
+        @p_total_db2_alt_pendientes = 0,
+        @p_total_cr2_alt_pendientes = 0,
+        @p_rowid_docto_contable = @v_rowid_docto,
+        @p_error = @v_error_sa OUTPUT,
+        @p_desc_error = @v_desc_error_sa OUTPUT;
+
+    IF @v_error_sa <> 0 
+        THROW 60020, @v_desc_error_sa, 1;
+
+
+      --------------------------------------------------
+    -- MOVIMIENTO SALDO ABIERTO (DESPUÉS DE sp_sa_cancelar)
+    --------------------------------------------------
+
+    EXEC sp_mov_saldo_abierto_insertar
+        @id_cia = @p_cia,
+        @rowid_mov_docto = @rowid_mov_cr,       --?? MOVIMIENTO CR
+        @rowid_docto = @v_rowid_docto,          --906742
+        @rowid_sa = @p_rowid_sa,                --264651
+        @fecha = @p_fecha,
+        @ind_estado = 0,
+        @valor_db = 0,
+        @valor_cr = @p_valor,
+        @valor_db_alt = 0,
+        @valor_cr_alt = 0,
+        @rowid_vend = @p_rowid_cobrador,        --74
+        @id_sucursal = N'001',
+        @prefijo_cruce = NULL,
+        @id_tipo_docto_cruce = N'BQE',
+        @consec_docto_cruce = 26024,
+        @nro_cuota_cruce = 0,
+        @notas = @p_notas,
+        @valor_aplicado_pp = 0,
+        @valor_aplicado_pp_alt = 0,
+        @valor_aprovecha = 0,
+        @valor_aprovecha_alt = 0,
+        @valor_retenciones = 0,
+        @valor_retenciones_alt = 0,
+        @p_rowid_pe_prov_cuenta = NULL,
+        @p_valor_db2 = 0,
+        @p_valor_cr2 = @p_valor,
+        @p_valor_db2_alt = 0,
+        @p_valor_cr2_alt = 0;
+
+
+        --------------------------------------------------
+      -- 🔧 ACTUALIZAR TOTALES DOCUMENTO (FORZADO)
+      --------------------------------------------------
+      UPDATE t350_co_docto_contable
+      SET 
+        f350_total_db = (
+          SELECT ISNULL(SUM(f351_valor_db), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        ),
+        f350_total_cr = (
+          SELECT ISNULL(SUM(f351_valor_cr), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        ),
+        f350_total_db2 = (
+          SELECT ISNULL(SUM(f351_valor_db2), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        ),
+        f350_total_cr2 = (
+          SELECT ISNULL(SUM(f351_valor_cr2), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        ),
+        f350_total_db3 = (
+          SELECT ISNULL(SUM(f351_valor_db3), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        ),
+        f350_total_cr3 = (
+          SELECT ISNULL(SUM(f351_valor_cr3), 0)
+          FROM t351_co_mov_docto
+          WHERE f351_rowid_docto = @v_rowid_docto
+        )
+      WHERE f350_rowid = @v_rowid_docto;
+
+      SELECT f350_total_db, f350_total_cr, f350_ind_estado
+      FROM t350_co_docto_contable
+      WHERE f350_rowid = @v_rowid_docto;
+
+      DECLARE 
+        @v_err_dbscrs INT,
+        @v_desc_err_dbscrs NVARCHAR(500);
+
+      EXEC sp_docto_actualizar_dbscrs
+        @rowid               = @v_rowid_docto,   -- ?? ROWID DEL DOCTO CONTABLE
+        @valordb             = 0,
+        @valorcr             = 0,
+        @basegravable        = 0,
+        @p_total_rx          = 0,
+        @p_valor_db2         = 0,
+        @p_valor_cr2         = @p_valor,          -- ?? VALOR DEL CRUCE
+        @p_base_gravable2    = 0,
+        @p_valor_db3         = 0,
+        @p_valor_cr3         = 0,
+        @p_base_gravable3    = 0,
+        @p_s_nro_error       = @v_err_dbscrs OUTPUT,
+        @p_s_desc_error      = @v_desc_err_dbscrs OUTPUT;
+
+
+      IF @v_err_dbscrs IS NOT NULL AND @v_err_dbscrs <> 0
+        THROW 60030, @v_desc_err_dbscrs, 1;
+
+
+
+
+      EXEC sp_rel_med_pag_actual_movto
+        @rowid_docto           = @v_rowid_docto,     -- docto contable
+        @rowid_mov_docto       = @rowid_mov_db,      -- ?? movimiento DB (caja/banco)
+        @id_medios_pago        = @p_id_medio_pago,   -- CG1
+        @p_desde_ctl_recaudo   = 0,
+        @p_rowid_rel_med_pago  = @v_rowid_rel_mp;    -- rel_med_pag_insertar
+
+
+      DECLARE 
+        @v_err_aprobar INT,
+        @v_desc_err_aprobar NVARCHAR(255);
+
+      EXEC sp_ingre_caja_validar_aprobar
+        @p_rowid_docto = @v_rowid_docto,   -- ?? documento contable
+        @p_error       = @v_err_aprobar OUTPUT,
+        @p_deserror    = @v_desc_err_aprobar OUTPUT;
+
+
+      IF @v_err_aprobar IS NOT NULL AND @v_err_aprobar <> 0
+        THROW 60040, @v_desc_err_aprobar, 1;
+
+
+
+
+        /* =============================
+          9. ACTUALIZAR ESTADO DOCTO
+          ============================= */
+        EXEC sp_docto_actualizar_estado
+            @p_rowid_docto = @v_rowid_docto,
+            @p_estado = 1,
+            @p_usuario = @p_usuario,
+            @p_error = @v_error OUTPUT,
+            @p_des_error = @v_deserror OUTPUT,
+            @p_id_motivo_otros = NULL,
+            @p_id_cia = @v_id_cia_out OUTPUT,
+            @p_id_co = @v_id_co_out OUTPUT,
+            @p_id_tipo_docto = @v_id_tipo_docto_out OUTPUT,
+            @p_numero_docto = @v_numero_docto_out OUTPUT,
+            @p_ind_cfdi = @v_ind_cfdi_out OUTPUT;
+
+        IF @v_error <> 0 THROW 50005, @v_deserror, 1;
+
+        COMMIT;
+    END TRY
+    BEGIN CATCH
+        ROLLBACK;
+        SELECT ERROR_NUMBER() AS error, ERROR_MESSAGE() AS descripcion;
+    END CATCH;
+
+
+`;
   
   try {
-    await transaction.begin();
-    console.log('🔄 Iniciando transacción para recibo de caja...');
+    console.log('🔄 Ejecutando script SQL para procesar recibo de caja...');
+    const result = await request.query(sqlScript);
     
-    const results = {
-      sp_docto_insertar: null,
-      sp_mov_docto_insertar: null,
-      sp_rel_med_pag_insertar: null,
-      sp_let_movto_adicionar: null,
-      sp_docto_actualizar_estado: null
-    };
-    
-    // 1. Ejecutar sp_docto_insertar
-    console.log('📝 Ejecutando sp_docto_insertar...');
-    const request1 = new sql.Request(transaction);
-    request1.timeout = 120000;
-    
-    // Configurar parámetros de entrada
-    request1.input('id_cia', sql.SmallInt, params.id_cia);
-    request1.input('id_co', sql.Char(3), params.id_co);
-    request1.input('id_tipo_docto', sql.Char(3), params.id_tipo_docto);
-    request1.input('consec_docto', sql.Int, params.consec_docto);
-    request1.input('prefijo', sql.Char(4), params.prefijo || ''); // Opcional, siempre vacío para RC/RCC
-    request1.input('fecha', sql.DateTime, params.fecha);
-    request1.input('periodo', sql.Int, params.periodo);
-    request1.input('rowid_tercero', sql.Int, params.rowid_tercero);
-    request1.input('sucursal', sql.Char(3), params.sucursal || ''); // Opcional, siempre vacío
-    request1.input('total_db', sql.Money, params.total_db);
-    request1.input('total_cr', sql.Money, params.total_cr);
-    request1.input('ind_origen', sql.SmallInt, params.ind_origen);
-    request1.input('ind_estado', sql.SmallInt, params.ind_estado);
-    request1.input('ind_transmit', sql.SmallInt, params.ind_transmit);
-    request1.input('fecha_creacion', sql.DateTime, params.fecha_creacion);
-    request1.input('fecha_actualiza', sql.DateTime, params.fecha_actualiza);
-    request1.input('fecha_afectado', sql.DateTime, params.fecha_afectado);
-    request1.input('notas', sql.VarChar(255), params.notas);
-    
-    // Parámetros opcionales
-    if (params.usuariocreacion !== undefined) request1.input('usuariocreacion', sql.VarChar(30), params.usuariocreacion);
-    if (params.p_rowid_docto_base !== undefined) request1.input('p_rowid_docto_base', sql.Int, params.p_rowid_docto_base);
-    if (params.p_referencia !== undefined) request1.input('p_referencia', sql.VarChar(20), params.p_referencia);
-    if (params.p_id_mandato !== undefined) request1.input('p_id_mandato', sql.Char(15), params.p_id_mandato);
-    if (params.p_rowid_movto_entidad !== undefined) request1.input('p_rowid_movto_entidad', sql.Int, params.p_rowid_movto_entidad);
-    if (params.p_id_tipo_cambio !== undefined) request1.input('p_id_tipo_cambio', sql.Char(3), params.p_id_tipo_cambio);
-    if (params.p_tasa_conv !== undefined) request1.input('p_tasa_conv', sql.Decimal(28, 4), params.p_tasa_conv);
-    if (params.p_tasa_local !== undefined) request1.input('p_tasa_local', sql.Decimal(28, 4), params.p_tasa_local);
-    if (params.p_id_moneda_docto !== undefined) request1.input('p_id_moneda_docto', sql.Char(3), params.p_id_moneda_docto);
-    if (params.p_id_moneda_conv !== undefined) request1.input('p_id_moneda_conv', sql.Char(3), params.p_id_moneda_conv);
-    if (params.p_ind_forma_conv !== undefined) request1.input('p_ind_forma_conv', sql.SmallInt, params.p_ind_forma_conv);
-    if (params.p_id_moneda_local !== undefined) request1.input('p_id_moneda_local', sql.Char(3), params.p_id_moneda_local);
-    if (params.p_ind_forma_local !== undefined) request1.input('p_ind_forma_local', sql.SmallInt, params.p_ind_forma_local);
-    if (params.p_rowid_te_plantilla !== undefined) request1.input('p_rowid_te_plantilla', sql.Int, params.p_rowid_te_plantilla);
-    if (params.p_rowid_sesion !== undefined) request1.input('p_rowid_sesion', sql.Int, params.p_rowid_sesion);
-    if (params.p_ind_tipo_origen !== undefined) request1.input('p_ind_tipo_origen', sql.SmallInt, params.p_ind_tipo_origen);
-    if (params.p_rowid_docto_rp !== undefined) request1.input('p_rowid_docto_rp', sql.Int, params.p_rowid_docto_rp);
-    if (params.p_id_proyecto !== undefined) request1.input('p_id_proyecto', sql.Char(15), params.p_id_proyecto);
-    if (params.p_ind_dif_cambio_forma !== undefined) request1.input('p_ind_dif_cambio_forma', sql.SmallInt, params.p_ind_dif_cambio_forma);
-    if (params.p_ind_clase_origen !== undefined) request1.input('p_ind_clase_origen', sql.SmallInt, params.p_ind_clase_origen);
-    
-    // Parámetros de salida
-    request1.output('p_rowid', sql.Int);
-    request1.output('p_timestamp', sql.DateTime);
-    
-    const result1 = await request1.execute('sp_docto_insertar');
-    results.sp_docto_insertar = {
-      p_rowid: result1.output.p_rowid,
-      p_timestamp: result1.output.p_timestamp
-    };
-    console.log(`✅ sp_docto_insertar completado. p_rowid: ${results.sp_docto_insertar.p_rowid}`);
-    
-    // Usar el p_rowid del procedimiento anterior
-    const rowid_docto = results.sp_docto_insertar.p_rowid;
-    
-    // Valor del movimiento (usar valor_db o valor_cr, deben ser iguales)
-    const valorMovimiento = params.valor_db || params.valor_cr || params.total_cr;
-    
-    // Auxiliar de banco/caja (opcional, si no viene usar el mismo que el cliente)
-    const rowid_auxiliar_banco = params.rowid_auxiliar_banco || params.rowid_auxiliar;
-    
-    // 2. Ejecutar sp_mov_docto_insertar - PRIMERA VEZ (Débito a Banco/Caja)
-    console.log('📝 Ejecutando sp_mov_docto_insertar (1/2) - Débito a Banco/Caja...');
-    const request2a = new sql.Request(transaction);
-    request2a.timeout = 120000;
-    
-    request2a.input('id_cia', sql.SmallInt, params.id_cia);
-    request2a.input('rowid_docto', sql.Int, rowid_docto);
-    request2a.input('id_un', sql.VarChar(20), params.id_un);
-    request2a.input('rowid_auxiliar', sql.Int, rowid_auxiliar_banco); // Auxiliar de banco/caja
-    request2a.input('rowid_tercero', sql.Int, params.rowid_tercero);
-    request2a.input('sucursal', sql.Char(3), params.sucursal || ''); // Opcional, siempre vacío
-    request2a.input('rowid_ccosto', sql.Int, params.rowid_ccosto);
-    request2a.input('rowid_fe', sql.Int, params.rowid_fe);
-    request2a.input('id_co_mov', sql.Char(3), params.id_co_mov);
-    request2a.input('fecha', sql.DateTime, params.fecha);
-    request2a.input('periodo', sql.Int, params.periodo);
-    request2a.input('ind_estado', sql.SmallInt, params.ind_estado);
-    request2a.input('valor_db', sql.Money, valorMovimiento); // Débito: entrada de dinero a banco/caja
-    request2a.input('valor_cr', sql.Money, 0); // Crédito: 0
-    request2a.input('valor_db_alt', sql.Money, params.valor_db_alt || 0);
-    request2a.input('valor_cr_alt', sql.Money, params.valor_cr_alt || 0);
-    request2a.input('base_gravable', sql.Money, params.base_gravable || 0);
-    request2a.input('docto_banco', sql.Char(2), params.docto_banco);
-    request2a.input('nro_docto_banco', sql.Int, params.nro_docto_banco);
-    request2a.input('ind_mov_sa', sql.SmallInt, params.ind_mov_sa || 0);
-    request2a.input('ind_mov_diferido', sql.SmallInt, params.ind_mov_diferido || 0);
-    request2a.input('notas', sql.VarChar(255), params.notas);
-    request2a.input('IndAutomatico', sql.SmallInt, params.IndAutomatico || 0);
-    request2a.input('ind_mov_caja', sql.SmallInt, params.ind_mov_caja || 0);
-    
-    // Parámetros opcionales (aplicar a ambos movimientos)
-    if (params.p_rowid_mov_distribucion !== undefined) request2a.input('p_rowid_mov_distribucion', sql.Int, params.p_rowid_mov_distribucion);
-    if (params.p_ind_mov_invent !== undefined) request2a.input('p_ind_mov_invent', sql.SmallInt, params.p_ind_mov_invent);
-    if (params.p_nro_alt_docto_banco !== undefined) request2a.input('p_nro_alt_docto_banco', sql.VarChar(30), params.p_nro_alt_docto_banco);
-    if (params.p_generar_rx !== undefined) request2a.input('p_generar_rx', sql.SmallInt, params.p_generar_rx);
-    if (params.p_valor_db_rx !== undefined) request2a.input('p_valor_db_rx', sql.Money, params.p_valor_db_rx);
-    if (params.p_valor_cr_rx !== undefined) request2a.input('p_valor_cr_rx', sql.Money, params.p_valor_cr_rx);
-    if (params.p_valor_base_gravable_rx !== undefined) request2a.input('p_valor_base_gravable_rx', sql.Money, params.p_valor_base_gravable_rx);
-    if (params.p_rowid_cpto_tesoreria !== undefined) request2a.input('p_rowid_cpto_tesoreria', sql.Int, params.p_rowid_cpto_tesoreria);
-    if (params.p_ind_respetar_valor2 !== undefined) request2a.input('p_ind_respetar_valor2', sql.SmallInt, params.p_ind_respetar_valor2);
-    if (params.p_valor_db2 !== undefined) request2a.input('p_valor_db2', sql.Money, params.p_valor_db2);
-    if (params.p_valor_cr2 !== undefined) request2a.input('p_valor_cr2', sql.Money, params.p_valor_cr2);
-    if (params.p_base_gravable2 !== undefined) request2a.input('p_base_gravable2', sql.Money, params.p_base_gravable2);
-    if (params.p_valor_db_alt2 !== undefined) request2a.input('p_valor_db_alt2', sql.Money, params.p_valor_db_alt2);
-    if (params.p_valor_cr_alt2 !== undefined) request2a.input('p_valor_cr_alt2', sql.Money, params.p_valor_cr_alt2);
-    if (params.p_valor_db_rx2 !== undefined) request2a.input('p_valor_db_rx2', sql.Money, params.p_valor_db_rx2);
-    if (params.p_valor_cr_rx2 !== undefined) request2a.input('p_valor_cr_rx2', sql.Money, params.p_valor_cr_rx2);
-    if (params.p_valor_base_gravable_rx2 !== undefined) request2a.input('p_valor_base_gravable_rx2', sql.Money, params.p_valor_base_gravable_rx2);
-    if (params.p_ind_respetar_valor3 !== undefined) request2a.input('p_ind_respetar_valor3', sql.SmallInt, params.p_ind_respetar_valor3);
-    if (params.p_valor_db3 !== undefined) request2a.input('p_valor_db3', sql.Money, params.p_valor_db3);
-    if (params.p_valor_cr3 !== undefined) request2a.input('p_valor_cr3', sql.Money, params.p_valor_cr3);
-    if (params.p_base_gravable3 !== undefined) request2a.input('p_base_gravable3', sql.Money, params.p_base_gravable3);
-    if (params.p_valor_db_alt3 !== undefined) request2a.input('p_valor_db_alt3', sql.Money, params.p_valor_db_alt3);
-    if (params.p_valor_cr_alt3 !== undefined) request2a.input('p_valor_cr_alt3', sql.Money, params.p_valor_cr_alt3);
-    if (params.p_valor_db_rx3 !== undefined) request2a.input('p_valor_db_rx3', sql.Money, params.p_valor_db_rx3);
-    if (params.p_valor_cr_rx3 !== undefined) request2a.input('p_valor_cr_rx3', sql.Money, params.p_valor_cr_rx3);
-    if (params.p_valor_base_gravable_rx3 !== undefined) request2a.input('p_valor_base_gravable_rx3', sql.Money, params.p_valor_base_gravable_rx3);
-    if (params.p_rowid_movto_entidad !== undefined) request2a.input('p_rowid_movto_entidad', sql.Int, params.p_rowid_movto_entidad);
-    if (params.p_impto_asum !== undefined) request2a.input('p_impto_asum', sql.Money, params.p_impto_asum);
-    if (params.p_impto_asum2 !== undefined) request2a.input('p_impto_asum2', sql.Money, params.p_impto_asum2);
-    if (params.p_impto_asum3 !== undefined) request2a.input('p_impto_asum3', sql.Money, params.p_impto_asum3);
-    if (params.p_impto_asum_rx !== undefined) request2a.input('p_impto_asum_rx', sql.Money, params.p_impto_asum_rx);
-    if (params.p_impto_asum_rx2 !== undefined) request2a.input('p_impto_asum_rx2', sql.Money, params.p_impto_asum_rx2);
-    if (params.p_impto_asum_rx3 !== undefined) request2a.input('p_impto_asum_rx3', sql.Money, params.p_impto_asum_rx3);
-    if (params.p_generar_rx_docto !== undefined) request2a.input('p_generar_rx_docto', sql.SmallInt, params.p_generar_rx_docto);
-    if (params.p_rowid_sesion !== undefined) request2a.input('p_rowid_sesion', sql.Int, params.p_rowid_sesion);
-    if (params.p_tasa_rx !== undefined) request2a.input('p_tasa_rx', sql.Decimal(28, 4), params.p_tasa_rx);
-    if (params.p_ind_forma_rx !== undefined) request2a.input('p_ind_forma_rx', sql.SmallInt, params.p_ind_forma_rx);
-    if (params.p_ind_forma_conv !== undefined) request2a.input('p_ind_forma_conv', sql.SmallInt, params.p_ind_forma_conv);
-    if (params.p_tasa_libro1 !== undefined) request2a.input('p_tasa_libro1', sql.Decimal(28, 4), params.p_tasa_libro1);
-    if (params.p_tasa_libro2 !== undefined) request2a.input('p_tasa_libro2', sql.Decimal(28, 4), params.p_tasa_libro2);
-    if (params.p_tasa_libro3 !== undefined) request2a.input('p_tasa_libro3', sql.Decimal(28, 4), params.p_tasa_libro3);
-    if (params.p_ind_mov_af !== undefined) request2a.input('p_ind_mov_af', sql.SmallInt, params.p_ind_mov_af);
-    if (params.p_rowid_rubro !== undefined) request2a.input('p_rowid_rubro', sql.Int, params.p_rowid_rubro);
-    
-    request2a.output('RowId', sql.Int);
-    
-    const result2a = await request2a.execute('sp_mov_docto_insertar');
-    const rowid_mov_banco = result2a.output.RowId;
-    console.log(`✅ sp_mov_docto_insertar (1/2) completado. RowId Banco/Caja: ${rowid_mov_banco}`);
-    
-    // 2. Ejecutar sp_mov_docto_insertar - SEGUNDA VEZ (Crédito a Cliente)
-    console.log('📝 Ejecutando sp_mov_docto_insertar (2/2) - Crédito a Cliente...');
-    const request2b = new sql.Request(transaction);
-    request2b.timeout = 120000;
-    
-    request2b.input('id_cia', sql.SmallInt, params.id_cia);
-    request2b.input('rowid_docto', sql.Int, rowid_docto);
-    request2b.input('id_un', sql.VarChar(20), params.id_un);
-    request2b.input('rowid_auxiliar', sql.Int, params.rowid_auxiliar); // Auxiliar del cliente
-    request2b.input('rowid_tercero', sql.Int, params.rowid_tercero);
-    request2b.input('sucursal', sql.Char(3), params.sucursal || ''); // Opcional, siempre vacío
-    request2b.input('rowid_ccosto', sql.Int, params.rowid_ccosto);
-    request2b.input('rowid_fe', sql.Int, params.rowid_fe);
-    request2b.input('id_co_mov', sql.Char(3), params.id_co_mov);
-    request2b.input('fecha', sql.DateTime, params.fecha);
-    request2b.input('periodo', sql.Int, params.periodo);
-    request2b.input('ind_estado', sql.SmallInt, params.ind_estado);
-    request2b.input('valor_db', sql.Money, 0); // Débito: 0
-    request2b.input('valor_cr', sql.Money, valorMovimiento); // Crédito: abono a cuenta del cliente
-    request2b.input('valor_db_alt', sql.Money, params.valor_db_alt || 0);
-    request2b.input('valor_cr_alt', sql.Money, params.valor_cr_alt || 0);
-    request2b.input('base_gravable', sql.Money, params.base_gravable || 0);
-    request2b.input('docto_banco', sql.Char(2), params.docto_banco);
-    request2b.input('nro_docto_banco', sql.Int, params.nro_docto_banco);
-    request2b.input('ind_mov_sa', sql.SmallInt, params.ind_mov_sa || 0);
-    request2b.input('ind_mov_diferido', sql.SmallInt, params.ind_mov_diferido || 0);
-    request2b.input('notas', sql.VarChar(255), params.notas);
-    request2b.input('IndAutomatico', sql.SmallInt, params.IndAutomatico || 0);
-    request2b.input('ind_mov_caja', sql.SmallInt, params.ind_mov_caja || 0);
-    
-    // Parámetros opcionales (aplicar a ambos movimientos)
-    if (params.p_rowid_mov_distribucion !== undefined) request2b.input('p_rowid_mov_distribucion', sql.Int, params.p_rowid_mov_distribucion);
-    if (params.p_ind_mov_invent !== undefined) request2b.input('p_ind_mov_invent', sql.SmallInt, params.p_ind_mov_invent);
-    if (params.p_nro_alt_docto_banco !== undefined) request2b.input('p_nro_alt_docto_banco', sql.VarChar(30), params.p_nro_alt_docto_banco);
-    if (params.p_generar_rx !== undefined) request2b.input('p_generar_rx', sql.SmallInt, params.p_generar_rx);
-    if (params.p_valor_db_rx !== undefined) request2b.input('p_valor_db_rx', sql.Money, params.p_valor_db_rx);
-    if (params.p_valor_cr_rx !== undefined) request2b.input('p_valor_cr_rx', sql.Money, params.p_valor_cr_rx);
-    if (params.p_valor_base_gravable_rx !== undefined) request2b.input('p_valor_base_gravable_rx', sql.Money, params.p_valor_base_gravable_rx);
-    if (params.p_rowid_cpto_tesoreria !== undefined) request2b.input('p_rowid_cpto_tesoreria', sql.Int, params.p_rowid_cpto_tesoreria);
-    if (params.p_ind_respetar_valor2 !== undefined) request2b.input('p_ind_respetar_valor2', sql.SmallInt, params.p_ind_respetar_valor2);
-    if (params.p_valor_db2 !== undefined) request2b.input('p_valor_db2', sql.Money, params.p_valor_db2);
-    if (params.p_valor_cr2 !== undefined) request2b.input('p_valor_cr2', sql.Money, params.p_valor_cr2);
-    if (params.p_base_gravable2 !== undefined) request2b.input('p_base_gravable2', sql.Money, params.p_base_gravable2);
-    if (params.p_valor_db_alt2 !== undefined) request2b.input('p_valor_db_alt2', sql.Money, params.p_valor_db_alt2);
-    if (params.p_valor_cr_alt2 !== undefined) request2b.input('p_valor_cr_alt2', sql.Money, params.p_valor_cr_alt2);
-    if (params.p_valor_db_rx2 !== undefined) request2b.input('p_valor_db_rx2', sql.Money, params.p_valor_db_rx2);
-    if (params.p_valor_cr_rx2 !== undefined) request2b.input('p_valor_cr_rx2', sql.Money, params.p_valor_cr_rx2);
-    if (params.p_valor_base_gravable_rx2 !== undefined) request2b.input('p_valor_base_gravable_rx2', sql.Money, params.p_valor_base_gravable_rx2);
-    if (params.p_ind_respetar_valor3 !== undefined) request2b.input('p_ind_respetar_valor3', sql.SmallInt, params.p_ind_respetar_valor3);
-    if (params.p_valor_db3 !== undefined) request2b.input('p_valor_db3', sql.Money, params.p_valor_db3);
-    if (params.p_valor_cr3 !== undefined) request2b.input('p_valor_cr3', sql.Money, params.p_valor_cr3);
-    if (params.p_base_gravable3 !== undefined) request2b.input('p_base_gravable3', sql.Money, params.p_base_gravable3);
-    if (params.p_valor_db_alt3 !== undefined) request2b.input('p_valor_db_alt3', sql.Money, params.p_valor_db_alt3);
-    if (params.p_valor_cr_alt3 !== undefined) request2b.input('p_valor_cr_alt3', sql.Money, params.p_valor_cr_alt3);
-    if (params.p_valor_db_rx3 !== undefined) request2b.input('p_valor_db_rx3', sql.Money, params.p_valor_db_rx3);
-    if (params.p_valor_cr_rx3 !== undefined) request2b.input('p_valor_cr_rx3', sql.Money, params.p_valor_cr_rx3);
-    if (params.p_valor_base_gravable_rx3 !== undefined) request2b.input('p_valor_base_gravable_rx3', sql.Money, params.p_valor_base_gravable_rx3);
-    if (params.p_rowid_movto_entidad !== undefined) request2b.input('p_rowid_movto_entidad', sql.Int, params.p_rowid_movto_entidad);
-    if (params.p_impto_asum !== undefined) request2b.input('p_impto_asum', sql.Money, params.p_impto_asum);
-    if (params.p_impto_asum2 !== undefined) request2b.input('p_impto_asum2', sql.Money, params.p_impto_asum2);
-    if (params.p_impto_asum3 !== undefined) request2b.input('p_impto_asum3', sql.Money, params.p_impto_asum3);
-    if (params.p_impto_asum_rx !== undefined) request2b.input('p_impto_asum_rx', sql.Money, params.p_impto_asum_rx);
-    if (params.p_impto_asum_rx2 !== undefined) request2b.input('p_impto_asum_rx2', sql.Money, params.p_impto_asum_rx2);
-    if (params.p_impto_asum_rx3 !== undefined) request2b.input('p_impto_asum_rx3', sql.Money, params.p_impto_asum_rx3);
-    if (params.p_generar_rx_docto !== undefined) request2b.input('p_generar_rx_docto', sql.SmallInt, params.p_generar_rx_docto);
-    if (params.p_rowid_sesion !== undefined) request2b.input('p_rowid_sesion', sql.Int, params.p_rowid_sesion);
-    if (params.p_tasa_rx !== undefined) request2b.input('p_tasa_rx', sql.Decimal(28, 4), params.p_tasa_rx);
-    if (params.p_ind_forma_rx !== undefined) request2b.input('p_ind_forma_rx', sql.SmallInt, params.p_ind_forma_rx);
-    if (params.p_ind_forma_conv !== undefined) request2b.input('p_ind_forma_conv', sql.SmallInt, params.p_ind_forma_conv);
-    if (params.p_tasa_libro1 !== undefined) request2b.input('p_tasa_libro1', sql.Decimal(28, 4), params.p_tasa_libro1);
-    if (params.p_tasa_libro2 !== undefined) request2b.input('p_tasa_libro2', sql.Decimal(28, 4), params.p_tasa_libro2);
-    if (params.p_tasa_libro3 !== undefined) request2b.input('p_tasa_libro3', sql.Decimal(28, 4), params.p_tasa_libro3);
-    if (params.p_ind_mov_af !== undefined) request2b.input('p_ind_mov_af', sql.SmallInt, params.p_ind_mov_af);
-    if (params.p_rowid_rubro !== undefined) request2b.input('p_rowid_rubro', sql.Int, params.p_rowid_rubro);
-    
-    request2b.output('RowId', sql.Int);
-    
-    const result2b = await request2b.execute('sp_mov_docto_insertar');
-    const rowid_mov_cliente = result2b.output.RowId;
-    console.log(`✅ sp_mov_docto_insertar (2/2) completado. RowId Cliente: ${rowid_mov_cliente}`);
-    
-    results.sp_mov_docto_insertar = {
-      RowId: rowid_mov_banco, // Usar el RowId del movimiento de banco para sp_rel_med_pag_insertar
-      RowIdBanco: rowid_mov_banco,
-      RowIdCliente: rowid_mov_cliente
-    };
-    console.log(`✅ sp_mov_docto_insertar completado. RowId Banco: ${rowid_mov_banco}, RowId Cliente: ${rowid_mov_cliente}`);
-    
-    // 3. Ejecutar sp_rel_med_pag_insertar
-    console.log('📝 Ejecutando sp_rel_med_pag_insertar...');
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:211',message:'Antes de sp_rel_med_pag_insertar',data:{rowid_docto,rowid_mov_docto:results.sp_mov_docto_insertar.RowId,p_id_caja:params.p_id_caja},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    const request3 = new sql.Request(transaction);
-    request3.timeout = 120000;
-    
-    request3.input('id_cia', sql.SmallInt, params.id_cia);
-    request3.input('rowid_docto', sql.Int, rowid_docto);
-    request3.input('rowid_mov_docto', sql.Int, results.sp_mov_docto_insertar.RowId);
-    request3.input('rowid_auxiliar', sql.Int, params.rowid_auxiliar);
-    request3.input('rowid_ccosto', sql.Int, params.rowid_ccosto);
-    request3.input('rowid_fe', sql.Int, params.rowid_fe);
-    request3.input('id_co', sql.Char(3), params.id_co);
-    request3.input('id_un', sql.VarChar(20), params.id_un);
-    request3.input('id_medios_pago', sql.Char(3), params.id_medios_pago);
-    request3.input('ind_estado', sql.SmallInt, params.ind_estado);
-    request3.input('valor', sql.Money, params.valor);
-    request3.input('valor_alterna', sql.Money, params.valor_alterna || 0);
-    request3.input('id_banco', sql.Char(10), params.id_banco);
-    request3.input('nro_cheque', sql.Int, params.nro_cheque);
-    request3.input('nro_cuenta', sql.VarChar(25), params.nro_cuenta);
-    request3.input('cod_seguridad', sql.Char(3), params.cod_seguridad);
-    request3.input('nro_autorizacion', sql.VarChar(10), params.nro_autorizacion);
-    request3.input('fecha_vcto', sql.Char(8), params.fecha_vcto);
-    request3.input('notas', sql.VarChar(255), params.notas);
-    request3.input('id_cuentas_bancarias', sql.Char(3), params.id_cuentas_bancarias);
-    request3.input('fecha_consignacion', sql.DateTime, params.fecha_consignacion);
-    request3.input('rowid_docto_consignacion', sql.Int, params.rowid_docto_consignacion);
-    request3.input('rowid_mov_docto_consignacion', sql.Int, params.rowid_mov_docto_consignacion);
-    request3.input('id_causales_devolucion', sql.Char(3), params.id_causales_devolucion);
-    request3.input('rowid_tercero', sql.Int, params.rowid_tercero);
-    request3.input('id_sucursal', sql.Char(3), params.id_sucursal || ''); // Opcional, siempre vacío
-    
-    // Parámetros requeridos por el SP (sin valores por defecto en el SP, deben enviarse siempre)
-    const p_id_caja_val = params.p_id_caja || null;
-    const p_id_moneda_val = params.p_id_moneda || null;
-    const p_ind_tipo_medio_val = params.p_ind_tipo_medio !== undefined ? params.p_ind_tipo_medio : null;
-    const p_referencia_otros_val = params.p_referencia_otros || null;
-    const p_valor_cr_val = params.p_valor_cr !== undefined ? params.p_valor_cr : 0;
-    const p_valor_cr_alt_val = params.p_valor_cr_alt !== undefined ? params.p_valor_cr_alt : 0;
-    
-    console.log('🔍 Parámetros sp_rel_med_pag_insertar:', {
-      p_id_caja: p_id_caja_val,
-      p_id_moneda: p_id_moneda_val,
-      p_ind_tipo_medio: p_ind_tipo_medio_val,
-      p_referencia_otros: p_referencia_otros_val,
-      p_valor_cr: p_valor_cr_val,
-      p_valor_cr_alt: p_valor_cr_alt_val
-    });
-    
-    request3.input('p_id_caja', sql.Char(3), p_id_caja_val);
-    request3.input('p_id_moneda', sql.Char(3), p_id_moneda_val);
-    request3.input('p_ind_tipo_medio', sql.SmallInt, p_ind_tipo_medio_val);
-    request3.input('p_referencia_otros', sql.VarChar(30), p_referencia_otros_val);
-    request3.input('p_valor_cr', sql.Money, p_valor_cr_val);
-    request3.input('p_valor_cr_alt', sql.Money, p_valor_cr_alt_val);
-    
-    // Parámetros opcionales (con valores por defecto en el SP)
-    request3.input('p_ind_cambio', sql.SmallInt, params.p_ind_cambio !== undefined ? params.p_ind_cambio : 0);
-    request3.input('p_NroAltDoctoBanco', sql.VarChar(30), params.p_NroAltDoctoBanco !== undefined ? params.p_NroAltDoctoBanco : '');
-    request3.input('p_ind_aux_orden', sql.SmallInt, params.p_ind_aux_orden !== undefined ? params.p_ind_aux_orden : 0);
-    request3.input('p_id_cta_bancaria_cg', sql.Char(3), params.p_id_cta_bancaria_cg || null);
-    request3.input('p_referencia_cg', sql.VarChar(30), params.p_referencia_cg || null);
-    request3.input('p_rowid_ccosto_cg', sql.Int, params.p_rowid_ccosto_cg || null);
-    request3.input('p_fecha_cg_cg', sql.DateTime, params.p_fecha_cg_cg || null);
-    request3.input('p_nro_docto_alterno_cg', sql.VarChar(30), params.p_nro_docto_alterno_cg || null);
-    request3.input('p_ind_liquida_tarjeta', sql.SmallInt, params.p_ind_liquida_tarjeta !== undefined ? params.p_ind_liquida_tarjeta : 0);
-    request3.input('p_vlr_impto_tarjeta', sql.Money, params.p_vlr_impto_tarjeta !== undefined ? params.p_vlr_impto_tarjeta : 0);
-    request3.input('p_vlr_impto_tarjeta_alt', sql.Money, params.p_vlr_impto_tarjeta_alt !== undefined ? params.p_vlr_impto_tarjeta_alt : 0);
-    request3.input('p_fecha_elab_cheq_postf', sql.DateTime, params.p_fecha_elab_cheq_postf || null);
-    request3.input('p_docto_banco', sql.VarChar(2), params.p_docto_banco || null);
-    
-    request3.output('p_rowid', sql.Int);
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:263',message:'Ejecutando sp_rel_med_pag_insertar',data:{rowid_docto,rowid_mov_docto:results.sp_mov_docto_insertar.RowId},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    const result3 = await request3.execute('sp_rel_med_pag_insertar');
-    results.sp_rel_med_pag_insertar = {
-      p_rowid: result3.output.p_rowid
-    };
-    console.log(`✅ sp_rel_med_pag_insertar completado. p_rowid: ${results.sp_rel_med_pag_insertar.p_rowid}`);
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:270',message:'sp_rel_med_pag_insertar completado',data:{p_rowid:results.sp_rel_med_pag_insertar.p_rowid,rowid_docto},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
-    // #endregion
-    
-    // 4. Ejecutar sp_let_movto_adicionar (solo si hay letras - p_rowid_docto_letra debe ser válido)
-    const tieneLetras = params.p_rowid_docto_letra && params.p_rowid_docto_letra !== 0 && params.p_rowid_docto_letra !== null;
-    
-    console.log('🔍 Verificando sp_let_movto_adicionar:', {
-      p_rowid_docto_letra: params.p_rowid_docto_letra,
-      tieneLetras: tieneLetras,
-      rowid_docto: rowid_docto
-    });
-    
-    // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:275',message:'Verificando si debe ejecutarse sp_let_movto_adicionar',data:{p_rowid_docto_letra:params.p_rowid_docto_letra,tieneLetras,rowid_docto},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-    // #endregion
-    
-    if (tieneLetras) {
-      console.log('📝 Ejecutando sp_let_movto_adicionar...');
-      const request4 = new sql.Request(transaction);
-      request4.timeout = 120000;
-      
-      request4.input('p_id_cia', sql.SmallInt, params.id_cia);
-      request4.input('p_rowid_docto_planilla', sql.Int, rowid_docto);
-      request4.input('p_rowid_docto_letra', sql.Int, params.p_rowid_docto_letra);
-      request4.input('p_id_ubicacion_origen', sql.VarChar(3), params.p_id_ubicacion_origen);
-      request4.input('p_id_ubicacion_destino', sql.VarChar(3), params.p_id_ubicacion_destino);
-      request4.input('p_rowid_sa_origen', sql.Int, params.p_rowid_sa_origen);
-      request4.input('p_rowid_sa_destino', sql.Int, params.p_rowid_sa_destino);
-      request4.input('p_leer_origenes', sql.SmallInt, params.p_leer_origenes || 0);
-      request4.input('p_id_cuenta_bancaria', sql.Char(3), params.p_id_cuenta_bancaria);
-      if (params.p_id_banco !== undefined) request4.input('p_id_banco', sql.Char(10), params.p_id_banco);
-      
-      request4.output('p_error', sql.Int);
-      request4.output('p_des_error', sql.VarChar(100));
-      request4.output('p_des_error2', sql.VarChar(100));
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:291',message:'Antes de ejecutar sp_let_movto_adicionar',data:{p_rowid_docto_planilla:rowid_docto,p_rowid_docto_letra:params.p_rowid_docto_letra},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-      
-      const result4 = await request4.execute('sp_let_movto_adicionar');
-      results.sp_let_movto_adicionar = {
-        p_error: result4.output.p_error,
-        p_des_error: result4.output.p_des_error,
-        p_des_error2: result4.output.p_des_error2
-      };
-      console.log(`✅ sp_let_movto_adicionar completado. p_error: ${results.sp_let_movto_adicionar.p_error}`);
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:301',message:'Después de ejecutar sp_let_movto_adicionar',data:{p_error:results.sp_let_movto_adicionar.p_error,p_des_error:results.sp_let_movto_adicionar.p_des_error},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
-      // #endregion
-      
-      // Verificar si hubo error en sp_let_movto_adicionar
-      if (results.sp_let_movto_adicionar.p_error !== 0) {
-        throw new Error(`Error en sp_let_movto_adicionar: ${results.sp_let_movto_adicionar.p_des_error} - ${results.sp_let_movto_adicionar.p_des_error2}`);
-      }
-    } else {
-      console.log('⏭️  sp_let_movto_adicionar omitido (no hay letras - p_rowid_docto_letra es 0 o null)');
-      results.sp_let_movto_adicionar = {
-        p_error: 0,
-        p_des_error: null,
-        p_des_error2: null
-      };
-      
-      // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/a6fa5083-d32f-4a14-8f41-d917cc18e8eb',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'recibo-caja.service.js:310',message:'sp_let_movto_adicionar omitido',data:{p_rowid_docto_letra:params.p_rowid_docto_letra},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-      // #endregion
-    }
-    
-    // 5. Ejecutar sp_docto_actualizar_estado
-    console.log('📝 Ejecutando sp_docto_actualizar_estado...');
-    const request5 = new sql.Request(transaction);
-    request5.timeout = 120000;
-    
-    request5.input('p_rowid_docto', sql.Int, rowid_docto);
-    request5.input('p_estado', sql.SmallInt, params.p_estado);
-    if (params.p_usuario !== undefined) request5.input('p_usuario', sql.VarChar(30), params.p_usuario);
-    if (params.p_id_motivo_otros !== undefined) request5.input('p_id_motivo_otros', sql.VarChar(20), params.p_id_motivo_otros);
-    
-    request5.output('p_error', sql.Int);
-    request5.output('p_des_error', sql.VarChar(255));
-    request5.output('p_id_cia', sql.SmallInt);
-    request5.output('p_id_co', sql.Char(3));
-    request5.output('p_id_tipo_docto', sql.Char(3));
-    request5.output('p_numero_docto', sql.Int);
-    request5.output('p_ind_cfdi', sql.SmallInt);
-    
-    const result5 = await request5.execute('sp_docto_actualizar_estado');
-    results.sp_docto_actualizar_estado = {
-      p_error: result5.output.p_error,
-      p_des_error: result5.output.p_des_error,
-      p_id_cia: result5.output.p_id_cia,
-      p_id_co: result5.output.p_id_co,
-      p_id_tipo_docto: result5.output.p_id_tipo_docto,
-      p_numero_docto: result5.output.p_numero_docto,
-      p_ind_cfdi: result5.output.p_ind_cfdi
-    };
-    console.log(`✅ sp_docto_actualizar_estado completado. p_error: ${results.sp_docto_actualizar_estado.p_error}`);
-    
-    // Verificar si hubo error en sp_docto_actualizar_estado
-    if (results.sp_docto_actualizar_estado.p_error !== 0) {
-      throw new Error(`Error en sp_docto_actualizar_estado: ${results.sp_docto_actualizar_estado.p_des_error}`);
-    }
-    
-    // Si todo salió bien, hacer commit
-    await transaction.commit();
-    console.log('✅ Transacción completada exitosamente');
+    console.log('✅ Script SQL ejecutado exitosamente');
     
     return {
       success: true,
       message: 'Recibo de caja procesado exitosamente',
-      results: results
+      data: result.recordset || []
     };
     
   } catch (error) {
-    // Si hay error, hacer rollback
-    try {
-      await transaction.rollback();
-      console.error('❌ Transacción revertida debido a error');
-    } catch (rollbackError) {
-      console.error('❌ Error al hacer rollback:', rollbackError);
-    }
-    
-    console.error('❌ Error procesando recibo de caja:', error);
+    console.error('❌ Error ejecutando script SQL:', error);
     throw error;
   }
 }
 
 module.exports = {
-  procesarReciboCaja
+  procesarReciboCaja,
+  leerProximoConsecutivoRC
 };
-

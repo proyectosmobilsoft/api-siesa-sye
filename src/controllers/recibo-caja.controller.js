@@ -1,31 +1,43 @@
 const reciboCajaService = require('../services/recibo-caja.service');
 
-/**
- * Controlador para procesar recibos de caja
- */
-
-/**
- * Procesa un recibo de caja ejecutando la secuencia de stored procedures
- */
 async function procesarReciboCaja(req, res, next) {
   try {
-    console.log('📋 Procesando recibo de caja...');
-    console.log('📋 Parámetros recibidos:', JSON.stringify(req.body, null, 2));
+    console.log("req.body", req.body);
     
     const result = await reciboCajaService.procesarReciboCaja(req.body);
-    
     res.json({
       success: true,
       message: result.message,
-      data: result.results
+      data: result.data
     });
   } catch (err) {
-    console.error('❌ Error en procesarReciboCaja:', err);
+    next(err);
+  }
+}
+
+async function getProximoConsecutivoRC(req, res, next) {
+  try {
+    const {
+      id_cia = 1,
+      id_tipo_docto = 'RCC',
+      id_co = '001',
+      p_bloquear = 0,
+      p_leer_mandato_tipo = 0
+    } = req.query;
+    const result = await reciboCajaService.leerProximoConsecutivoRC({
+      id_cia: Number(id_cia),
+      id_tipo_docto: String(id_tipo_docto),
+      id_co: String(id_co),
+      p_bloquear: Number(p_bloquear),
+      p_leer_mandato_tipo: Number(p_leer_mandato_tipo)
+    });
+    res.json(result);
+  } catch (err) {
     next(err);
   }
 }
 
 module.exports = {
-  procesarReciboCaja
+  procesarReciboCaja,
+  getProximoConsecutivoRC
 };
-
