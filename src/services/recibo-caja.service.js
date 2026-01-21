@@ -125,7 +125,7 @@ async function procesarReciboCaja(params) {
     DECLARE @p_referencia_med NVARCHAR(50) = ${escapeSQLString(params.p_referencia_med)};
     DECLARE @p_rowid_sa INT = ${params.p_rowid_sa}; --264651  ID DE SALDO ABIERTO
 
-    /* =====================================================
+/* =====================================================
       VARIABLES DE CONTROL
       ===================================================== */
     DECLARE 
@@ -484,7 +484,7 @@ async function procesarReciboCaja(params) {
         @p_valor_db3 = @p_valor,
         @p_valor_cr3 = 0,
         @p_valor_db_alt3 = 0,
-        @p_valor_cr_alt3 = 0;
+        @p_valor_cr_alt3 = 0; 
 
     --------------------------------------------------
     -- 127 MOVIMIENTO CR (TERCERO)
@@ -591,73 +591,6 @@ async function procesarReciboCaja(params) {
         @p_valor_cr2_alt = 0;
 
 
-        --------------------------------------------------
-      -- 🔧 ACTUALIZAR TOTALES DOCUMENTO (FORZADO)
-      --------------------------------------------------
-      UPDATE t350_co_docto_contable
-      SET 
-        f350_total_db = (
-          SELECT ISNULL(SUM(f351_valor_db), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        ),
-        f350_total_cr = (
-          SELECT ISNULL(SUM(f351_valor_cr), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        ),
-        f350_total_db2 = (
-          SELECT ISNULL(SUM(f351_valor_db2), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        ),
-        f350_total_cr2 = (
-          SELECT ISNULL(SUM(f351_valor_cr2), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        ),
-        f350_total_db3 = (
-          SELECT ISNULL(SUM(f351_valor_db3), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        ),
-        f350_total_cr3 = (
-          SELECT ISNULL(SUM(f351_valor_cr3), 0)
-          FROM t351_co_mov_docto
-          WHERE f351_rowid_docto = @v_rowid_docto
-        )
-      WHERE f350_rowid = @v_rowid_docto;
-
-      SELECT f350_total_db, f350_total_cr, f350_ind_estado
-      FROM t350_co_docto_contable
-      WHERE f350_rowid = @v_rowid_docto;
-
-      DECLARE 
-        @v_err_dbscrs INT,
-        @v_desc_err_dbscrs NVARCHAR(500);
-
-      EXEC sp_docto_actualizar_dbscrs
-        @rowid               = @v_rowid_docto,   -- ?? ROWID DEL DOCTO CONTABLE
-        @valordb             = 0,
-        @valorcr             = 0,
-        @basegravable        = 0,
-        @p_total_rx          = 0,
-        @p_valor_db2         = 0,
-        @p_valor_cr2         = @p_valor,          -- ?? VALOR DEL CRUCE
-        @p_base_gravable2    = 0,
-        @p_valor_db3         = 0,
-        @p_valor_cr3         = 0,
-        @p_base_gravable3    = 0,
-        @p_s_nro_error       = @v_err_dbscrs OUTPUT,
-        @p_s_desc_error      = @v_desc_err_dbscrs OUTPUT;
-
-
-      IF @v_err_dbscrs IS NOT NULL AND @v_err_dbscrs <> 0
-        THROW 60030, @v_desc_err_dbscrs, 1;
-
-
-
-
       EXEC sp_rel_med_pag_actual_movto
         @rowid_docto           = @v_rowid_docto,     -- docto contable
         @rowid_mov_docto       = @rowid_mov_db,      -- ?? movimiento DB (caja/banco)
@@ -666,25 +599,9 @@ async function procesarReciboCaja(params) {
         @p_rowid_rel_med_pago  = @v_rowid_rel_mp;    -- rel_med_pag_insertar
 
 
-      DECLARE 
-        @v_err_aprobar INT,
-        @v_desc_err_aprobar NVARCHAR(255);
-
-      EXEC sp_ingre_caja_validar_aprobar
-        @p_rowid_docto = @v_rowid_docto,   -- ?? documento contable
-        @p_error       = @v_err_aprobar OUTPUT,
-        @p_deserror    = @v_desc_err_aprobar OUTPUT;
-
-
-      IF @v_err_aprobar IS NOT NULL AND @v_err_aprobar <> 0
-        THROW 60040, @v_desc_err_aprobar, 1;
-
-
-
-
-        /* =============================
-          9. ACTUALIZAR ESTADO DOCTO
-          ============================= */
+	/* =============================
+		9. ACTUALIZAR ESTADO DOCTO
+    ============================= */
         EXEC sp_docto_actualizar_estado
             @p_rowid_docto = @v_rowid_docto,
             @p_estado = 1,
@@ -699,6 +616,562 @@ async function procesarReciboCaja(params) {
             @p_ind_cfdi = @v_ind_cfdi_out OUTPUT;
 
         IF @v_error <> 0 THROW 50005, @v_deserror, 1;
+
+		-----------------------------------PROCESO DE REVERSAR Y BORRAR------------------------------------------------------
+
+		EXEC sp_docto_reversar_y_borrar @rowid = @v_rowid_docto, @borrarencabezado = 0
+
+
+
+
+
+
+
+
+----------------------------------------------------PROCESO DE APROVAR-------------------------------------
+
+DECLARE 
+    @v_error_mp INT,
+    @v_desc_mp NVARCHAR(40);
+DECLARE @v_fecha_actualiza DATETIME = GETDATE();
+
+
+
+---------------------------Modificar documento----------------------------------
+EXEC sp_docto_modificar
+    @rowid = @v_rowid_docto,
+    @rowid_tercero = @p_rowid_tercero,
+    @fecha_actualiza = @v_fecha_actualiza OUTPUT,
+    @notas = @p_notas,
+    @usuarioactualiza = @p_usuario,
+    @p_id_sucursal = NULL,
+    @p_fecha = @p_fecha,
+    @p_referencia = N'',
+    @p_id_mandato = NULL,
+    @p_rowid_movto_entidad = NULL,
+    @p_id_tipo_cambio = NULL,
+    @p_tasa_conv = 0,
+    @p_tasa_local = 0,
+    @p_id_moneda_docto = NULL,
+    @p_id_moneda_conv = NULL,
+    @p_ind_forma_conv = 0,
+    @p_id_moneda_local = NULL,
+    @p_ind_forma_local = 0,
+    @p_rowid_te_plantilla = NULL,
+    @p_rowid_docto_rp = NULL,
+    @p_id_proyecto = NULL;
+
+
+	----------Modificar ingreso de caja-----------------------
+EXEC sp_ingre_caja_mod
+    @id_cia = @p_cia,
+    @rowid_docto = @v_rowid_docto,
+    @fecha_elaboracion = @p_fecha,
+    @fecha_recaudo = @p_fecha,
+    @rowid_cobrador = @p_rowid_cobrador,
+    @moneda_rc = @p_moneda,
+    @valor_rc = @p_valor,
+    @moneda_aplicar = @p_moneda,
+    @valor_conversion = @p_valor,
+    @valor_aplicar_real = @p_valor,
+    @rowid_fe = @p_rowid_fe,
+    @rowid_ccosto = NULL,
+    @id_un = @p_id_un,
+    @id_co = @p_id_co,
+    @id_caja = @p_id_caja,
+    @notas = @p_notas,
+    @rowidtercero = @p_rowid_tercero,
+    @p_referencia = N'',
+    @p_id_sucursal_filtro = NULL,
+    @p_rowid_auxiliar_filtro = NULL,
+    @p_id_co_filtro = @p_id_co,
+    @p_id_un_filtro = NULL,
+    @p_ind_presenta_neg_filtro = 0,
+    @p_id_tipo_docto_filtro = NULL,
+    @p_fecha_ini_filtro = NULL,
+    @p_fecha_fin_filtro = NULL,
+    @p_num_ini_filtro = NULL,
+    @p_num_fin_filtro = NULL,
+    @p_ind_valida_medPag = 1,
+    @p_rowid_tcro_filtro = NULL,
+    @p_ind_orden_proc = 1;
+
+
+--------------------Borrar medios de pago-------------------------------
+
+DECLARE @v_err_borrar INT, @v_desc_borrar NVARCHAR(100);
+
+EXEC sp_ingre_caja_borrar_medios
+    @rowidIngreso = @v_rowid_docto,
+    @p_error = @v_err_borrar OUTPUT,
+    @p_des_error = @v_desc_borrar OUTPUT;
+
+IF @v_err_borrar <> 0
+    THROW 70001, @v_desc_borrar, 1;
+
+
+
+
+----------------------Revalidar medio de pago--------------------------------
+
+EXEC sp_rel_med_pag_validar
+    @p_cia = @p_cia,
+    @p_id_medio_pago = @p_id_medio_pago,
+    @p_id_cta_bancaria = @p_id_cta_bancaria,
+    @p_rowid_auxiliar = 1,
+    @p_id_co = @p_id_co,
+    @p_id_caja = @p_id_caja,
+    @p_rowid_usuario = @p_rowid_usuario,
+    @p_tipo_medio = @v_tipo_medio OUTPUT,
+    @p_rowid_aux_bancos = @v_rowid_aux_bancos OUTPUT,
+    @p_id_auxiliar = @v_id_auxiliar OUTPUT,
+    @p_id_moneda_auxiliar = @v_id_moneda_auxiliar OUTPUT,
+    @p_error = @v_error_mp OUTPUT,
+    @p_rowid_docto = @v_rowid_docto,
+    @p_fecha_cg_posf = @p_fecha,
+    @p_ind_aux_orden = @v_ind_aux_orden OUTPUT,
+    @p_valor = @p_valor,
+    @p_vlr_impto_tarjeta = 0,
+    @p_descripcion = @v_desc_mp OUTPUT;
+
+IF @v_error_mp <> 0
+    THROW 70002, 'Error validando medio de pago', 1;
+
+
+
+
+-----------INSERTAR MEDIO DE PAGO----------------------------
+
+EXEC sp_rel_med_pag_insertar
+    @id_cia = @p_cia,
+    @rowid_docto = @v_rowid_docto,
+    @rowid_mov_docto = NULL,
+    @rowid_auxiliar = @v_rowid_aux_bancos,
+    @rowid_ccosto = NULL,
+    @rowid_fe = @p_rowid_fe,
+    @id_co = @p_id_co,
+    @id_un = @p_id_un,
+    @id_medios_pago = @p_id_medio_pago,
+    @ind_estado = 0,
+    @valor = @p_valor,
+    @valor_alterna = 0,
+    @id_banco = NULL,
+    @nro_cheque = NULL,
+    @nro_cuenta = NULL,
+    @cod_seguridad = NULL,
+    @nro_autorizacion = NULL,
+    @fecha_vcto = NULL,
+    @notas = N'',
+    @id_cuentas_bancarias = @p_id_cta_bancaria,
+    @fecha_consignacion = @p_fecha,
+    @rowid_docto_consignacion = @v_rowid_docto,
+    @rowid_mov_docto_consignacion = NULL,
+    @id_causales_devolucion = NULL,
+    @rowid_tercero = NULL,
+    @id_sucursal = NULL,
+    @p_id_caja = @p_id_caja,
+    @p_id_moneda = @p_moneda,
+    @p_ind_tipo_medio = @v_tipo_medio,
+    @p_referencia_otros = @p_referencia_med,
+    @p_valor_cr = 0,
+    @p_valor_cr_alt = 0,
+    @p_ind_cambio = 0,
+    @p_NroAltDoctoBanco = N'',
+    @p_rowid = @v_rowid_rel_mp OUTPUT,
+    @p_ind_aux_orden = @v_ind_aux_orden,
+    @p_id_cta_bancaria_cg = NULL,
+    @p_referencia_cg = N'',
+    @p_rowid_ccosto_cg = NULL,
+    @p_fecha_cg_cg = NULL,
+    @p_nro_docto_alterno_cg = N'',
+    @p_ind_liquida_tarjeta = 0,
+    @p_vlr_impto_tarjeta = 0,
+    @p_vlr_impto_tarjeta_alt = 0,
+    @p_fecha_elab_cheq_postf = NULL,
+    @p_docto_banco = N'CG';
+
+
+
+	-------------------LIMPIAR RETENCIONES / ELIMINAR PREVIAS----------------------------
+	EXEC sp_ingre_caja_ret_eli
+    @p_rowid_docto = @v_rowid_docto;
+
+
+	----------------------MOVIMIENTO DÉBITO (CAJA / BANCO)----------------------------
+
+	DECLARE @v_rowid_mov_db INT;
+
+EXEC sp_mov_docto_insertar
+    @id_cia = @p_cia,
+    @rowid_docto = @v_rowid_docto,
+    @id_un = @p_id_un,
+    @rowid_auxiliar = @v_rowid_aux_bancos,
+    @rowid_tercero = NULL,
+    @sucursal = NULL,
+    @rowid_ccosto = NULL,
+    @rowid_fe = @p_rowid_fe,
+    @id_co_mov = @p_id_co,
+    @fecha = @p_fecha,
+    @periodo = @p_periodo_docto,
+    @ind_estado = 0,
+    @valor_db = @p_valor,
+    @valor_cr = 0,
+    @valor_db_alt = 0,
+    @valor_cr_alt = 0,
+    @base_gravable = 0,
+    @docto_banco = N'CG',
+    @nro_docto_banco = @p_numero_docto,
+    @ind_mov_sa = 0,
+    @ind_mov_diferido = 0,
+    @notas = @p_notas,
+    @RowId = @v_rowid_mov_db OUTPUT,
+    @IndAutomatico = 1,
+    @ind_mov_caja = 0,
+    @p_rowid_sesion = 365008;
+
+
+
+
+	-------------------MOVIMIENTO FE (DEL DÉBITO)------------------------
+	DECLARE @v_rowid_mov_fe INT;
+
+	EXEC sp_movto_fe_insertar
+		@p_rowid = @v_rowid_mov_fe OUTPUT,
+		@p_ts = '1753-01-01',
+		@p_id_cia = @p_cia,
+		@p_rowid_movto = @v_rowid_mov_db,
+		@p_rowid_fe = @p_rowid_fe,
+		@p_fecha = @p_fecha,
+		@p_id_periodo = @p_periodo_docto,
+		@p_valor_db = @p_valor,
+		@p_valor_cr = 0,
+		@p_valor_db_alt = 0,
+		@p_valor_cr_alt = 0,
+		@p_valor_db2 = @p_valor,
+		@p_valor_cr2 = 0,
+		@p_valor_db_alt2 = 0,
+		@p_valor_cr_alt2 = 0,
+		@p_valor_db3 = @p_valor,
+		@p_valor_cr3 = 0,
+		@p_valor_db_alt3 = 0,
+		@p_valor_cr_alt3 = 0;
+
+
+		------------------MOVIMIENTO CRÉDITO (TERCERO)-----------------------
+
+		DECLARE @v_rowid_mov_cr INT;
+
+		EXEC sp_mov_docto_insertar
+			@id_cia = @p_cia,
+			@rowid_docto = @v_rowid_docto,
+			@id_un = @p_id_un,
+			@rowid_auxiliar = 9,
+			@rowid_tercero = @p_rowid_tercero,
+			@sucursal = @p_id_co,
+			@rowid_ccosto = NULL,
+			@rowid_fe = NULL,
+			@id_co_mov = @p_id_co,
+			@fecha = @p_fecha,
+			@periodo = @p_periodo_docto,
+			@ind_estado = 0,
+			@valor_db = 0,
+			@valor_cr = @p_valor,
+			@valor_db_alt = 0,
+			@valor_cr_alt = 0,
+			@base_gravable = 0,
+			@docto_banco = N'',
+			@nro_docto_banco = 0,
+			@ind_mov_sa = 1,
+			@ind_mov_diferido = 0,
+			@notas = @p_notas,
+			@RowId = @v_rowid_mov_cr OUTPUT,
+			@IndAutomatico = 1,
+			@ind_mov_caja = 0,
+			@p_rowid_sesion = 365008;
+
+
+
+-------------------CANCELAR SALDO ABIERTO-----------------------
+
+DECLARE @v_err_sa INT, @v_desc_sa NVARCHAR(255);
+
+EXEC sp_sa_cancelar
+    @rowidsa = @p_rowid_sa,
+    @fecha = @p_fecha,
+    @total_db = 0,
+    @total_cr = 0,
+    @total_db_alt = 0,
+    @total_cr_alt = 0,
+    @total_db_pendientes = 0,
+    @total_cr_pendientes = @p_valor,
+    @total_db_alt_pendientes = 0,
+    @total_cr_alt_pendientes = 0,
+    @chequesposfechados = 0,
+    @p_total_db2_pendientes = 0,
+    @p_total_cr2_pendientes = @p_valor,
+    @p_total_db2_alt_pendientes = 0,
+    @p_total_cr2_alt_pendientes = 0,
+    @p_rowid_docto_contable = @v_rowid_docto,
+    @p_error = @v_err_sa OUTPUT,
+    @p_desc_error = @v_desc_sa OUTPUT;
+
+IF @v_err_sa <> 0
+    THROW 80001, @v_desc_sa, 1;
+
+
+
+
+	-----------------------------Aplicar saldo abierto--------------------------------------------
+	EXEC sp_mov_saldo_abierto_insertar
+    @id_cia = @p_cia,
+    @rowid_mov_docto = @v_rowid_mov_cr,
+    @rowid_docto = @v_rowid_docto,
+    @rowid_sa = @p_rowid_sa,
+    @fecha = @p_fecha,
+    @ind_estado = 0,
+    @valor_db = 0,
+    @valor_cr = @p_valor,
+    @valor_db_alt = 0,
+    @valor_cr_alt = 0,
+    @rowid_vend = @p_rowid_cobrador,
+    @id_sucursal = @p_id_co,
+    @prefijo_cruce = NULL,
+    @id_tipo_docto_cruce = N'BQE',
+    @consec_docto_cruce = 26024,
+    @nro_cuota_cruce = 0,
+    @notas = @p_notas,
+    @valor_aplicado_pp = 0,
+    @valor_aplicado_pp_alt = 0,
+    @valor_aprovecha = 0,
+    @valor_aprovecha_alt = 0,
+    @valor_retenciones = 0,
+    @valor_retenciones_alt = 0,
+    @p_rowid_pe_prov_cuenta = NULL,
+    @p_valor_db2 = 0,
+    @p_valor_cr2 = @p_valor,
+    @p_valor_db2_alt = 0,
+    @p_valor_cr2_alt = 0;
+
+
+	-----------------------Recalcular totales DB / CR del documento-------------------------------
+	DECLARE @v_err_dbs INT, @v_desc_dbs NVARCHAR(500);
+
+EXEC sp_docto_actualizar_dbscrs
+    @rowid = @v_rowid_docto,
+    @valordb = 0,
+    @valorcr = 0,
+    @basegravable = 0,
+    @p_total_rx = 0,
+    @p_valor_db2 = 0,
+    @p_valor_cr2 = 0,
+    @p_base_gravable2 = 0,
+    @p_valor_db3 = 0,
+    @p_valor_cr3 = 0,
+    @p_base_gravable3 = 0,
+    @p_s_nro_error = @v_err_dbs OUTPUT,
+    @p_s_desc_error = @v_desc_dbs OUTPUT;
+
+IF @v_err_dbs <> 0
+    THROW 90010, @v_desc_dbs, 1;
+
+
+
+
+	-----------------------Amarrar medio de pago con movimiento DB--------------------------
+	EXEC sp_rel_med_pag_actual_movto
+    @rowid_docto = @v_rowid_docto,
+    @rowid_mov_docto = @v_rowid_mov_db,
+    @id_medios_pago = @p_id_medio_pago,
+    @p_desde_ctl_recaudo = 0,
+    @p_rowid_rel_med_pago = @v_rowid_rel_mp;
+
+
+	------------------------Validar Unidad de Negocio-----------------------------------
+
+	DECLARE @v_desc_un NVARCHAR(40), @v_err_un SMALLINT;
+
+EXEC sp_un_validar
+    @p_cia = @p_cia,
+    @p_id_un = @p_id_un,
+    @p_por_estado = -1,
+    @p_ind_estado = 1,
+    @p_por_seguridad_x_maestro = -1,
+    @p_rowid_usuario = @p_rowid_usuario,
+    @p_des_un = @v_desc_un OUTPUT,
+    @p_error = @v_err_un OUTPUT;
+
+IF @v_err_un <> 0
+    THROW 90020, 'Unidad de negocio inválida', 1;
+
+
+	-----------------------Validar control granulado----------------------------------
+	DECLARE @v_ind_granulado SMALLINT;
+
+EXEC sp_validar_control_granulado
+    @p_id_cia = @p_cia,
+    @p_id_clase_docto = @p_clase_docto,
+    @p_rowid_docto = @v_rowid_docto,
+    @p_ind_existe = @v_ind_granulado OUTPUT;
+
+
+
+	---------------------------Aprobar ingreso de caja--------------------------------------
+	DECLARE @v_err_aprobar INT, @v_desc_aprobar NVARCHAR(255);
+
+EXEC sp_ingre_caja_validar_aprobar
+    @p_rowid_docto = @v_rowid_docto,
+    @p_error = @v_err_aprobar OUTPUT,
+    @p_deserror = @v_desc_aprobar OUTPUT;
+
+IF @v_err_aprobar <> 0
+    THROW 90030, @v_desc_aprobar, 1;
+
+
+
+	-----------------Deducir estado final del documento------------------------------
+	DECLARE 
+    @v_ded_ret SMALLINT,
+    @v_err_estado INT,
+    @v_desc_estado NVARCHAR(200);
+
+EXEC sp_docto_deducir_estado
+    @rowid = @v_rowid_docto,
+    @p_leer_movtos_gastos = -1,
+    @p_ded_ret_pago = @v_ded_ret OUTPUT,
+    @p_error = @v_err_estado OUTPUT,
+    @p_cadena_error = @v_desc_estado OUTPUT;
+
+IF @v_err_estado <> 0
+    THROW 90040, @v_desc_estado, 1;
+
+
+
+	----------------Generar impuestos en el pago-----------------
+
+	DECLARE @v_err_imp INT, @v_desc_imp NVARCHAR(255);
+
+EXEC sp_generico_imp_en_pago
+    @p_rowid_docto = @v_rowid_docto,
+    @p_error = @v_err_imp OUTPUT,
+    @p_des_error = @v_desc_imp OUTPUT;
+
+IF @v_err_imp <> 0
+    THROW 91010, @v_desc_imp, 1;
+
+
+	----------------------Actualizar estado del documento (APROBADO)----------------------------
+
+
+	DECLARE
+    @v_err_est INT,
+    @v_desc_est NVARCHAR(255),
+    @v_id_cia SMALLINT,
+    @v_id_co NVARCHAR(3),
+    @v_id_tipo_docto NVARCHAR(3),
+    @v_num_docto INT,
+    @v_ind_cfdi SMALLINT;
+
+EXEC sp_docto_actualizar_estado
+    @p_rowid_docto = @v_rowid_docto,
+    @p_estado = 1,
+    @p_usuario = @p_usuario,
+    @p_error = @v_err_est OUTPUT,
+    @p_des_error = @v_desc_est OUTPUT,
+    @p_id_motivo_otros = NULL,
+    @p_id_cia = @v_id_cia OUTPUT,
+    @p_id_co = @v_id_co OUTPUT,
+    @p_id_tipo_docto = @v_id_tipo_docto OUTPUT,
+    @p_numero_docto = @v_num_docto OUTPUT,
+    @p_ind_cfdi = @v_ind_cfdi OUTPUT;
+
+IF @v_err_est <> 0
+    THROW 91020, @v_desc_est, 1;
+
+
+
+	----------------Validar entidad dinámica--------------------------
+	DECLARE
+    @v_err_ent INT,
+    @v_desc_ent NVARCHAR(255),
+    @v_tipo_docto_ent NVARCHAR(3),
+    @v_grupo_ent NVARCHAR(30);
+
+EXEC sp_docto_val_ent_din
+    @p_error = @v_err_ent OUTPUT,
+    @p_cadena_error = @v_desc_ent OUTPUT,
+    @p_id_tipo_docto = @v_tipo_docto_ent OUTPUT,
+    @p_id_grupo_entidad = @v_grupo_ent OUTPUT,
+    @p_rowid_docto = @v_rowid_docto,
+    @p_id_tipo_entidad = N'';
+
+IF @v_err_ent <> 0
+    THROW 91030, @v_desc_ent, 1;
+
+
+
+	----------------------Generar movimientos intercompañía---------------------------
+
+
+	DECLARE @v_err_cia INT, @v_desc_cia NVARCHAR(255);
+
+EXEC sp_genera_movto_cias
+    @p_rowid_docto = @v_rowid_docto,
+    @p_error = @v_err_cia OUTPUT,
+    @p_cadena_error = @v_desc_cia OUTPUT;
+
+IF @v_err_cia <> 0
+    THROW 91040, @v_desc_cia, 1;
+
+	-----------------------Disparar facturación----------------------------
+	DECLARE @v_err_fact INT, @v_desc_fact NVARCHAR(255);
+
+EXEC sp_inst_fn_docto_gen_facturar
+    @p_rowid_docto_base = @v_rowid_docto,
+    @p_error = @v_err_fact OUTPUT,
+    @p_error_cadena = @v_desc_fact OUTPUT;
+
+IF @v_err_fact <> 0
+    THROW 91050, @v_desc_fact, 1;
+
+
+
+	--------------------------Generar documento de percepción----------------------------
+
+	EXEC sp_genera_docto_percepcion
+    @p_rowid_docto = @v_rowid_docto;
+
+
+
+	-----------------------Limpieza final de retenciones----------------------------
+
+	EXEC sp_ingre_caja_ret_eli
+    @p_rowid_docto = @v_rowid_docto;
+
+
+
+
+
+
+
+
+/*
+      DECLARE 
+        @v_err_aprobar INT,
+        @v_desc_err_aprobar NVARCHAR(255);
+
+      EXEC sp_ingre_caja_validar_aprobar
+        @p_rowid_docto = @v_rowid_docto,   -- ?? documento contable
+        @p_error       = @v_err_aprobar OUTPUT,
+        @p_deserror    = @v_desc_err_aprobar OUTPUT;
+
+
+      IF @v_err_aprobar IS NOT NULL AND @v_err_aprobar <> 0
+        THROW 60040, @v_desc_err_aprobar, 1;*/
+
+
+
+
+
 
         COMMIT;
     END TRY
