@@ -24,6 +24,16 @@ const options = {
         description: 'Servidor local de desarrollo',
       },
     ],
+    components: {
+      securitySchemes: {
+        bearerAuth: {
+          type: 'http',
+          scheme: 'bearer',
+          bearerFormat: 'JWT',
+          description: 'Token JWT para autenticación. Incluya el token en el header Authorization como "Bearer {token}"'
+        }
+      }
+    }
   },
   apis: [
     path.join(__dirname, '../routes/*.js'),
@@ -62,6 +72,10 @@ function setupSwagger(app) {
         }
         request.headers['Accept'] = 'application/json';
         request.headers['Content-Type'] = 'application/json';
+        
+        // El token JWT se maneja automáticamente por Swagger UI cuando se configura en el campo de autorización
+        // Si el usuario ha ingresado un token, Swagger UI lo incluirá automáticamente en el header Authorization
+        
         return request;
       },
       responseInterceptor: (response) => {
