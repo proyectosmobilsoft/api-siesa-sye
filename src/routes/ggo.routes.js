@@ -6,12 +6,6 @@ const { validateJWT } = require("../middlewares/auth");
 /**
  * @swagger
  * components:
- *   securitySchemes:
- *     bearerAuth:
- *       type: http
- *       scheme: bearer
- *       bearerFormat: JWT
- *       description: Token JWT para autenticación. Incluya el token en el header Authorization como "Bearer {token}"
  *   schemas:
  *     PackageUnit:
  *       type: object
@@ -267,8 +261,6 @@ const { validateJWT } = require("../middlewares/auth");
  *     summary: Obtener tipos de empaque disponibles
  *     description: Consulta los tipos de empaque disponibles desde la tabla type_packageUnit de la base de datos
  *     tags: [GGO - Envíos, Recogidas y Visitas]
- *     security:
- *       - bearerAuth: []
  *     responses:
  *       200:
  *         description: Lista de tipos de empaque obtenida exitosamente
@@ -293,19 +285,6 @@ const { validateJWT } = require("../middlewares/auth");
  *                   nombre: "Estibas"
  *                 - codigo: 3
  *                   nombre: "Paquetes"
- *       401:
- *         description: Token de autenticación requerido o inválido
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 success:
- *                   type: boolean
- *                   example: false
- *                 message:
- *                   type: string
- *                   example: "Token de autenticación requerido"
  *       500:
  *         description: Error al consultar los tipos de empaque
  *         content:
@@ -320,7 +299,7 @@ const { validateJWT } = require("../middlewares/auth");
  *                   type: string
  *                   example: "Error al consultar la base de datos"
  */
-router.get("/package-units", validateJWT, ggoController.getPackageUnits);
+router.get("/package-units", ggoController.getPackageUnits);
 
 /**
  * @swagger
@@ -330,7 +309,7 @@ router.get("/package-units", validateJWT, ggoController.getPackageUnits);
  *     description: |
  *       Crea un envío, recogida o visita en el servicio GGO (Logimiles).
  *       
- *       La comunicación se realiza mediante HTTPS con autenticación JWT.
+ *       La comunicación se realiza mediante HTTPS con autenticación mediante token API.
  *       
  *       **Campos requeridos:**
  *       - orderNumber: Número de orden para trazabilidad
@@ -351,8 +330,14 @@ router.get("/package-units", validateJWT, ggoController.getPackageUnits);
  *       - Si se envía el array de productos, cada producto debe tener al menos el campo "name"
  *       - El campo packageUnit debe corresponder a un código válido de la tabla type_packageUnit
  *     tags: [GGO - Envíos, Recogidas y Visitas]
- *     security:
- *       - bearerAuth: []
+ *     parameters:
+ *       - in: header
+ *         name: x-api-key
+ *         required: true
+ *         schema:
+ *           type: string
+ *         description: API Key para validar la identidad y autenticación
+ *         example: "tu-token-jwt-aqui"
  *     requestBody:
  *       required: true
  *       content:
