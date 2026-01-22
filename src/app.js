@@ -12,6 +12,7 @@ const facturaRoutes = require('./routes/factura.routes');
 const cuentasBancariasRoutes = require('./routes/cuentas-bancarias.routes');
 const localRoutes = require('./routes/local.routes');
 const reciboCajaRoutes = require('./routes/recibo-caja.routes');
+const ggoRoutes = require('./routes/ggo.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -162,6 +163,7 @@ app.use('/api/factura', facturaRoutes);
 app.use('/api/maestros/cuentas-bancarias', cuentasBancariasRoutes);
 app.use('/api/local', localRoutes);
 app.use('/api/recibo-caja', reciboCajaRoutes);
+app.use('/api/ggo', ggoRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
