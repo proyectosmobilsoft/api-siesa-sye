@@ -462,6 +462,15 @@ router.get('/estados-financieros', facturaController.getEstadosFinancieros);
  *         description: ID del tercero (rowid) para filtrar facturas. Si se proporciona, solo retorna facturas de ese tercero específico.
  *         example: 12345
  *       - in: query
+ *         name: id_co
+ *         required: false
+ *         schema:
+ *           type: string
+ *           pattern: '^[0-9]{3}$'
+ *           default: "001"
+ *         description: ID del centro de operación (001, 002, 003, etc.). Por defecto es "001".
+ *         example: "001"
+ *       - in: query
  *         name: page
  *         required: false
  *         schema:

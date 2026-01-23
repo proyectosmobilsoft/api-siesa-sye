@@ -15,7 +15,7 @@ async function getEstadosFinancieros(req, res, next) {
 
 async function getFacturas(req, res, next) {
   try {
-    const { page, pageSize, id_tercero } = req.query;
+    const { page, pageSize, id_tercero, id_co } = req.query;
     
     // Paginación: por defecto 100 registros cuando se proporciona page, máximo 5000
     const pageNumber = page ? Math.max(1, parseInt(page)) : null;
@@ -24,13 +24,17 @@ async function getFacturas(req, res, next) {
 
     // Convertir id_tercero a integer si se proporciona
     const idTercero = id_tercero ? parseInt(id_tercero) : null;
+    
+    // Obtener id_co del query, por defecto '001'
+    const idCo = id_co || '001';
 
     // Obtener facturas y total en paralelo
     const [facturas, total] = await Promise.all([
       facturaService.getFacturas(
         limit,
         offset,
-        idTercero
+        idTercero,
+        idCo
       ),
       facturaService.getFacturasCount(
         idTercero

@@ -52,38 +52,81 @@ async function getEstadosFinancieros(periodoInicial = 202401, periodoFinal = 202
   return result.recordset;
 }
 
-async function getFacturas(limit = 1000, offset = 0, idTercero = null) {
+async function getFacturas(limit = 1000, offset = 0, idTercero = null, idCo = '001') {
   const pool = await getPool();
 
   const request = pool.request();
   // Aumentar timeout a 120 segundos para consultas complejas
   request.timeout = 120000;
-  request.input('limit', require('mssql').Int, limit);
-  request.input('offset', require('mssql').Int, offset);
+  
+  const sql = require('mssql');
+  
+  // Preparar valores para los parámetros
+  // Si idCo es null o undefined, usar NULL en SQL
+  const idCoValue = idCo || null;
+  const idTerceroValue = idTercero || null;
 
-  // Construir filtro opcional por tercero
-  let terceroFilter = '';
-  if (idTercero) {
-    request.input('idTercero', require('mssql').Int, idTercero);
+  // Construir el query usando parámetros seguros
+  // Para valores NULL, usar NULL directamente en SQL
+  // Para valores con datos, usar variables SQL internas
+  let query = `
+    DECLARE @FechaActual DATETIME = GETDATE();
+  `;
+
+  // Agregar declaraciones de variables solo si hay valores
+  if (idCoValue) {
+    request.input('idCoParam', sql.Char(3), idCoValue);
+    query += `\n    DECLARE @IdCoParam NVARCHAR(3) = @idCoParam;`;
+  } else {
+    query += `\n    DECLARE @IdCoParam NVARCHAR(3) = NULL;`;
   }
 
-  const query = `
-    EXEC [dbo].[sp_sa_leer_sas_tercero]
-    @cia = 1,              -- Compañía
-    @idco = '001',         -- Centro de Operación (visto en tus imágenes)
-    @idun = '99',          -- Unidad de Negocio (General)
-    @rowidauxiliar = 9,    -- Cuenta de Clientes (Auxiliar 9)
-    @rowidtercero = @idTercero, -- EL BUFETE KYRIOS SAS
-    @idsucursal = '001',   -- Sucursal 001
-    @escxc = -1,           -- IMPORTANTE: -1 significa "Cuentas por Cobrar"
-    @enmonedalocal = -1,   -- -1 significa "Moneda Local" (Pesos)
-    @afecha = 0,
-    @fechamayoroigual = NULL,
-    @p_ind_libro = 1;      -- 1 significa "Libro 1 / PCGA" (Para evitar duplicados NIIF)
+  if (idTerceroValue) {
+    request.input('idTerceroParam', sql.Int, idTerceroValue);
+    query += `\n    DECLARE @RowIdTerceroParam INT = @idTerceroParam;`;
+  } else {
+    query += `\n    DECLARE @RowIdTerceroParam INT = NULL;`;
+  }
+
+  query += `
+    EXEC sp_cons_est_cta_saldo_doct 
+      @cia = 1,
+      @tipo = NULL,
+      @fecha = @FechaActual,
+      @afecha = 0,
+      @rowidtercero = @RowIdTerceroParam,
+      @idsucursal = NULL,
+      @rowidauxiliar = NULL,
+      @plancriterio = NULL,
+      @idmayor = NULL,
+      @rowidvendedor = NULL,
+      @idco = @IdCoParam,
+      @idun = NULL,
+      @idpais = NULL,
+      @iddepto = NULL,
+      @idciudad = NULL,
+      @verificarrango = 0,
+      @escorriente = -1,
+      @desde = 0,
+      @hasta = 0,
+      @p_dias_gracia = 0,
+      @p_rowid_usuario = 1133,
+      @p_tipo_libro = 0;
   `;
 
   const result = await request.query(query);
-  return result.recordset;
+  
+  // Aplicar paginación en memoria si es necesario
+  // Nota: El stored procedure puede retornar muchos registros
+  // Si necesitas paginación a nivel de BD, sería mejor hacerlo en el SP
+  let recordset = result.recordset || [];
+  
+  // Aplicar limit y offset si se proporcionaron
+  if (limit && offset >= 0) {
+    recordset = recordset.slice(offset, offset + limit);
+  }
+  
+  return recordset;
 }
 
 // Función para obtener el total de registros (para paginación)
