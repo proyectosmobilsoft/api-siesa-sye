@@ -13,6 +13,7 @@ const cuentasBancariasRoutes = require('./routes/cuentas-bancarias.routes');
 const localRoutes = require('./routes/local.routes');
 const reciboCajaRoutes = require('./routes/recibo-caja.routes');
 const ggoRoutes = require('./routes/ggo.routes');
+const pedidosRoutes = require('./routes/pedidos.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -141,7 +142,7 @@ app.get('/api/health', (req, res) => {
     nodeEnv: process.env.NODE_ENV || 'not set',
     timestamp: new Date().toISOString()
   };
-  
+
   res.json({
     success: true,
     status: 'ok',
@@ -164,6 +165,7 @@ app.use('/api/maestros/cuentas-bancarias', cuentasBancariasRoutes);
 app.use('/api/local', localRoutes);
 app.use('/api/recibo-caja', reciboCajaRoutes);
 app.use('/api/ggo', ggoRoutes);
+app.use('/api/pedidos', pedidosRoutes);
 
 app.use(notFound);
 app.use(errorHandler);
