@@ -16,12 +16,8 @@ const options = {
     },
     servers: [
       {
-        url: 'http://192.168.1.254:3010',
+        url: 'http://179.33.214.87:3010',
         description: 'Servidor de producción',
-      },
-      {
-        url: 'http://localhost:3010',
-        description: 'Servidor local de desarrollo',
       },
     ],
     components: {
@@ -95,8 +91,7 @@ function setupSwagger(app) {
   // Configurar Swagger UI
   app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
   const port = process.env.PORT || 3010;
-  console.log(`📘 Swagger disponible en http://localhost:${port}/api/docs`);
-  console.log(`📘 Swagger disponible en http://192.168.1.254:${port}/api/docs`);
+  console.log(`📘 Swagger disponible en http://179.33.214.87:${port}/api/docs`);
 
   // Verificar que el endpoint de health esté documentado
   if (swaggerSpec.paths && swaggerSpec.paths['/api/health']) {
