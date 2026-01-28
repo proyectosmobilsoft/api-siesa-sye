@@ -49,10 +49,13 @@ if (process.env.NODE_ENV !== 'production') {
 }
 
 function setupSwagger(app) {
-  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  // Opciones de Swagger UI
+  const swaggerUiOptions = {
     customCss: '.swagger-ui .topbar { display: none }',
     customSiteTitle: 'API Distrisye - Documentación',
     swaggerOptions: {
+      // Esto es crítico para producción - le dice a Swagger UI que use URLs relativas
+      url: '/api/docs/swagger.json',
       persistAuthorization: true,
       displayRequestDuration: true,
       filter: true,
@@ -61,21 +64,19 @@ function setupSwagger(app) {
       requestInterceptor: (request) => {
         // Asegurar que las peticiones usen el protocolo correcto
         if (request.url && !request.url.startsWith('http')) {
-          const host = request.headers && request.headers.host;
-          if (host) {
-            request.url = `http://${host}${request.url}`;
-          }
+          // Usar la URL del navegador para construir la URL completa
+          const baseUrl = typeof window !== 'undefined' ? window.location.origin : '';
+          request.url = `${baseUrl}${request.url}`;
         }
         // Asegurar que los headers sean correctos
         if (!request.headers) {
           request.headers = {};
         }
         request.headers['Accept'] = 'application/json';
-        request.headers['Content-Type'] = 'application/json';
-        
-        // El token JWT se maneja automáticamente por Swagger UI cuando se configura en el campo de autorización
-        // Si el usuario ha ingresado un token, Swagger UI lo incluirá automáticamente en el header Authorization
-        
+        if (request.method !== 'GET') {
+          request.headers['Content-Type'] = 'application/json';
+        }
+
         return request;
       },
       responseInterceptor: (response) => {
@@ -83,11 +84,20 @@ function setupSwagger(app) {
         return response;
       }
     }
-  }));
+  };
+
+  // Servir el JSON de Swagger en una ruta separada
+  app.get('/api/docs/swagger.json', (req, res) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.send(swaggerSpec);
+  });
+
+  // Configurar Swagger UI
+  app.use('/api/docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, swaggerUiOptions));
   const port = process.env.PORT || 3010;
   console.log(`📘 Swagger disponible en http://localhost:${port}/api/docs`);
   console.log(`📘 Swagger disponible en http://192.168.1.254:${port}/api/docs`);
-  
+
   // Verificar que el endpoint de health esté documentado
   if (swaggerSpec.paths && swaggerSpec.paths['/api/health']) {
     console.log('✅ Endpoint /api/health documentado en Swagger');
