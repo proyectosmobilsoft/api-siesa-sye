@@ -14,12 +14,6 @@ const options = {
         email: 'dev@distrisye.com',
       },
     },
-    servers: [
-      {
-        url: 'http://179.33.214.87:3010',
-        description: 'Servidor de producción',
-      },
-    ],
     components: {
       securitySchemes: {
         bearerAuth: {
