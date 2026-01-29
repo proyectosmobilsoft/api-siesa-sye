@@ -58,7 +58,9 @@ function formatSQLDateTime(dateValue) {
 }
 
 /**
- * Ejecuta el script SQL completo para procesar un recibo de caja
+ * Ejecuta el script SQL completo para procesar un recibo de caja.
+ * Ahora p_rowid_sa debe ser un arreglo (por ejemplo: [111, 222] o [{ p_rowid_sa: 111 }, { p_rowid_sa: 222 }])
+ * y el script se ejecutará una vez por cada elemento del arreglo.
  * @param {Object} params - Parámetros del request body
  * @returns {Promise<Object>} - Resultado de la ejecución
  */
@@ -83,18 +85,29 @@ async function procesarReciboCaja(params) {
     throw new Error(`Parámetros requeridos faltantes: ${missingParams.join(', ')}`);
   }
 
-  // Preparar valores para el script SQL
+  // p_rowid_sa ahora debe ser un arreglo (de números o de objetos con propiedad p_rowid_sa)
+  if (!Array.isArray(params.p_rowid_sa) || params.p_rowid_sa.length === 0) {
+    throw new Error('Parámetros requeridos faltantes: p_rowid_sa debe ser un arreglo con al menos un elemento');
+  }
+
+  const rowidSaList = params.p_rowid_sa.map(item => {
+    if (typeof item === 'object' && item !== null) {
+      return Number(item.p_rowid_sa);
+    }
+    return Number(item);
+  });
+
+  if (rowidSaList.some(v => Number.isNaN(v))) {
+    throw new Error('Parámetros inválidos: todos los elementos de p_rowid_sa deben ser numéricos');
+  }
+
+  // Preparar valores comunes para el script SQL
   const p_prefijo = params.p_prefijo || '';
-  
-  // Formatear fecha
   const fechaSQL = formatSQLDateTime(params.p_fecha);
-  
   const pool = await getPool();
-  const request = pool.request();
-  request.timeout = 180000; // 3 minutos para scripts complejos
   
-  // Construir el script SQL reemplazando las variables DECLARE
-  const sqlScript = `
+  // Construir el script SQL base; luego se inyectan dinámicamente los bloques de saldo abierto
+  const baseSqlScript = `
     /* =====================================================
       VARIABLES DE ENTRADA
       ===================================================== */
@@ -123,7 +136,7 @@ async function procesarReciboCaja(params) {
     DECLARE @p_id_medio_pago NVARCHAR(10) = ${escapeSQLString(params.p_id_medio_pago)};
     DECLARE @p_id_cta_bancaria NVARCHAR(10) = ${escapeSQLString(params.p_id_cta_bancaria)};
     DECLARE @p_referencia_med NVARCHAR(50) = ${escapeSQLString(params.p_referencia_med)};
-    DECLARE @p_rowid_sa INT = ${params.p_rowid_sa}; --264651  ID DE SALDO ABIERTO
+    DECLARE @p_rowid_sa INT = __ROWID_SA__; -- ID DE SALDO ABIERTO (se reemplaza en runtime)
 
 /* =====================================================
       VARIABLES DE CONTROL
@@ -525,70 +538,7 @@ async function procesarReciboCaja(params) {
         @IndAutomatico=1,@ind_mov_caja=0,
         @p_rowid_sesion=365008;
 
-      --------------------------------------------------
-    -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO)
-    --------------------------------------------------
-    DECLARE 
-        @v_error_sa INT,
-        @v_desc_error_sa NVARCHAR(255);
-
-    EXEC sp_sa_cancelar
-        @rowidsa = @p_rowid_sa,                 -- 264651 (obtenido previamente)
-        @fecha = @p_fecha,
-        @total_db = 0,
-        @total_cr = 0,
-        @total_db_alt = 0,
-        @total_cr_alt = 0,
-        @total_db_pendientes = 0,
-        @total_cr_pendientes = @p_valor,
-        @total_db_alt_pendientes = 0,
-        @total_cr_alt_pendientes = 0,
-        @chequesposfechados = 0,
-        @p_total_db2_pendientes = 0,
-        @p_total_cr2_pendientes = @p_valor,
-        @p_total_db2_alt_pendientes = 0,
-        @p_total_cr2_alt_pendientes = 0,
-        @p_rowid_docto_contable = @v_rowid_docto,
-        @p_error = @v_error_sa OUTPUT,
-        @p_desc_error = @v_desc_error_sa OUTPUT;
-
-    IF @v_error_sa <> 0 
-        THROW 60020, @v_desc_error_sa, 1;
-
-
-      --------------------------------------------------
-    -- MOVIMIENTO SALDO ABIERTO (DESPUÉS DE sp_sa_cancelar)
-    --------------------------------------------------
-
-    EXEC sp_mov_saldo_abierto_insertar
-        @id_cia = @p_cia,
-        @rowid_mov_docto = @rowid_mov_cr,       --?? MOVIMIENTO CR
-        @rowid_docto = @v_rowid_docto,          --906742
-        @rowid_sa = @p_rowid_sa,                --264651
-        @fecha = @p_fecha,
-        @ind_estado = 0,
-        @valor_db = 0,
-        @valor_cr = @p_valor,
-        @valor_db_alt = 0,
-        @valor_cr_alt = 0,
-        @rowid_vend = @p_rowid_cobrador,        --74
-        @id_sucursal = N'001',
-        @prefijo_cruce = NULL,
-        @id_tipo_docto_cruce = N'BQE',
-        @consec_docto_cruce = 26024,
-        @nro_cuota_cruce = 0,
-        @notas = @p_notas,
-        @valor_aplicado_pp = 0,
-        @valor_aplicado_pp_alt = 0,
-        @valor_aprovecha = 0,
-        @valor_aprovecha_alt = 0,
-        @valor_retenciones = 0,
-        @valor_retenciones_alt = 0,
-        @p_rowid_pe_prov_cuenta = NULL,
-        @p_valor_db2 = 0,
-        @p_valor_cr2 = @p_valor,
-        @p_valor_db2_alt = 0,
-        @p_valor_cr2_alt = 0;
+      __SA_BLOCKS__
 
 
       EXEC sp_rel_med_pag_actual_movto
@@ -1184,7 +1134,83 @@ IF @v_err_fact <> 0
 `;
   
   try {
-    console.log('🔄 Ejecutando script SQL para procesar recibo de caja...');
+    const saBlockTemplate = `
+      --------------------------------------------------
+    -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO)
+    --------------------------------------------------
+    DECLARE 
+        @v_error_sa INT,
+        @v_desc_error_sa NVARCHAR(255);
+
+    EXEC sp_sa_cancelar
+        @rowidsa = __ROWID_SA__,                 -- ID de saldo abierto
+        @fecha = @p_fecha,
+        @total_db = 0,
+        @total_cr = 0,
+        @total_db_alt = 0,
+        @total_cr_alt = 0,
+        @total_db_pendientes = 0,
+        @total_cr_pendientes = @p_valor,
+        @total_db_alt_pendientes = 0,
+        @total_cr_alt_pendientes = 0,
+        @chequesposfechados = 0,
+        @p_total_db2_pendientes = 0,
+        @p_total_cr2_pendientes = @p_valor,
+        @p_total_db2_alt_pendientes = 0,
+        @p_total_cr2_alt_pendientes = 0,
+        @p_rowid_docto_contable = @v_rowid_docto,
+        @p_error = @v_error_sa OUTPUT,
+        @p_desc_error = @v_desc_error_sa OUTPUT;
+
+    IF @v_error_sa <> 0 
+        THROW 60020, @v_desc_error_sa, 1;
+
+
+      --------------------------------------------------
+    -- MOVIMIENTO SALDO ABIERTO (DESPUÉS DE sp_sa_cancelar)
+    --------------------------------------------------
+    
+    EXEC sp_mov_saldo_abierto_insertar
+        @id_cia = @p_cia,
+        @rowid_mov_docto = @rowid_mov_cr,       -- MOVIMIENTO CR
+        @rowid_docto = @v_rowid_docto,          
+        @rowid_sa = __ROWID_SA__,               
+        @fecha = @p_fecha,
+        @ind_estado = 0,
+        @valor_db = 0,
+        @valor_cr = @p_valor,
+        @valor_db_alt = 0,
+        @valor_cr_alt = 0,
+        @rowid_vend = @p_rowid_cobrador,        
+        @id_sucursal = N'001',
+        @prefijo_cruce = NULL,
+        @id_tipo_docto_cruce = N'BQE',
+        @consec_docto_cruce = 26024,
+        @nro_cuota_cruce = 0,
+        @notas = @p_notas,
+        @valor_aplicado_pp = 0,
+        @valor_aplicado_pp_alt = 0,
+        @valor_aprovecha = 0,
+        @valor_aprovecha_alt = 0,
+        @valor_retenciones = 0,
+        @valor_retenciones_alt = 0,
+        @p_rowid_pe_prov_cuenta = NULL,
+        @p_valor_db2 = 0,
+        @p_valor_cr2 = @p_valor,
+        @p_valor_db2_alt = 0,
+        @p_valor_cr2_alt = 0;
+`;
+
+    const dynamicBlocks = rowidSaList
+      .map(rowidSa => saBlockTemplate.replace(/__ROWID_SA__/g, String(rowidSa)))
+      .join('\n');
+
+    const sqlScript = baseSqlScript.replace('__SA_BLOCKS__', dynamicBlocks);
+
+    console.log('🔄 Ejecutando script SQL para procesar recibo de caja con múltiples saldos abiertos...');
+    const request = pool.request();
+    request.timeout = 180000; // 3 minutos para scripts complejos
+
     const result = await request.query(sqlScript);
     
     console.log('✅ Script SQL ejecutado exitosamente');
