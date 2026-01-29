@@ -538,6 +538,10 @@ async function procesarReciboCaja(params) {
         @IndAutomatico=1,@ind_mov_caja=0,
         @p_rowid_sesion=365008;
 
+       DECLARE 
+        @v_error_sa INT,
+        @v_desc_error_sa NVARCHAR(255);
+
       __SA_BLOCKS__
 
 
@@ -1138,9 +1142,6 @@ IF @v_err_fact <> 0
       --------------------------------------------------
     -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO)
     --------------------------------------------------
-    DECLARE 
-        @v_error_sa INT,
-        @v_desc_error_sa NVARCHAR(255);
 
     EXEC sp_sa_cancelar
         @rowidsa = __ROWID_SA__,                 -- ID de saldo abierto
