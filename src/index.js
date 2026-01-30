@@ -29,35 +29,17 @@ async function startServer() {
     }
 
     const server = app.listen(port, () => {
-      console.log(`🚀 Servidor corriendo en http://localhost:${port}`);
-      console.log(`📘 Documentación disponible en http://localhost:${port}/api/docs`);
-      console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🚀 Server running on port ${port}`);
 
-      // Iniciar job de sincronización de pedidos
-      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
-      pedidosSyncJob.start();
+      // Iniciar job de sincronización de pedidos (solo si está habilitado)
+      try {
+        const pedidosSyncJob = require('./jobs/pedidos-sync.job');
+        pedidosSyncJob.start();
+      } catch (error) {
+        console.warn('⚠️  No se pudo iniciar sync job:', error.message);
+      }
     });
 
-    // Manejo de cierre graceful
-    process.on('SIGTERM', () => {
-      console.log('📛 SIGTERM recibido, cerrando servidor...');
-      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
-      pedidosSyncJob.stop();
-      server.close(() => {
-        console.log('✅ Servidor cerrado correctamente');
-        process.exit(0);
-      });
-    });
-
-    process.on('SIGINT', () => {
-      console.log('\n📛 SIGINT recibido, cerrando servidor...');
-      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
-      pedidosSyncJob.stop();
-      server.close(() => {
-        console.log('✅ Servidor cerrado correctamente');
-        process.exit(0);
-      });
-    });
     // Manejo de errores del servidor
     server.on('error', (error) => {
       if (error.syscall !== 'listen') {
@@ -79,6 +61,26 @@ async function startServer() {
           throw error;
       }
     });
+
+    // Manejo de cierre graceful
+    const gracefulShutdown = () => {
+      console.log('\n📛 Señal de cierre recibida, cerrando servidor...');
+      try {
+        const pedidosSyncJob = require('./jobs/pedidos-sync.job');
+        pedidosSyncJob.stop();
+      } catch (error) {
+        console.warn('⚠️  Error deteniendo sync job:', error.message);
+      }
+
+      server.close(() => {
+        console.log('✅ Servidor cerrado correctamente');
+        process.exit(0);
+      });
+    };
+
+    process.on('SIGTERM', gracefulShutdown);
+    process.on('SIGINT', gracefulShutdown);
+
   } catch (error) {
     console.error('❌ Error starting server:', error);
     console.error('Error stack:', error.stack);
@@ -87,4 +89,3 @@ async function startServer() {
 }
 
 startServer();
-
