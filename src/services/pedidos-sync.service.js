@@ -1,4 +1,5 @@
-const { getPool } = require('../db/db');
+const PedidosDataService = require('./pedidos-data.service');
+const PedidoTransformer = require('../utils/pedido-transformer');
 const stateManager = require('../utils/state-manager');
 const HttpClient = require('../utils/http-client');
 
@@ -43,51 +44,72 @@ class PedidosSyncService {
         try {
             console.log('\n🔄 Iniciando sincronización de pedidos...');
 
-            // 1. Leer estado
-            const state = stateManager.readState();
-            console.log(`📅 Última fecha procesada: ${state.ultimaFecha}`);
+            // 1. Calcular rango de fechas (solo hoy - getday)
+            const { fechaInicial, fechaFinal } = this.getDateRange();
+            console.log(`📅 Rango de fechas: ${fechaInicial.toISOString()} - ${fechaFinal.toISOString()}`);
 
-            // 2. Consultar pedidos nuevos
-            const pedidos = await this.fetchNewPedidos(state.ultimaFecha);
+            // 2. Obtener pedidos completos (ejecuta los 3 SPs)
+            const pedidosDB = await PedidosDataService.getPedidosCompletos(fechaInicial, fechaFinal);
 
-            if (pedidos.length === 0) {
-                console.log('✨ No hay pedidos nuevos');
+            if (pedidosDB.length === 0) {
+                console.log('✨ No hay pedidos nuevos para hoy');
                 return;
             }
 
-            console.log(`📦 Encontrados ${pedidos.length} pedidos nuevos`);
+            console.log(`📦 Encontrados ${pedidosDB.length} pedidos para procesar`);
 
-            // 3. Filtrar pedidos que no hayan sido procesados
-            const pedidosNuevos = this.filterNewPedidos(pedidos, state);
+            // 3. Leer estado para filtrar pedidos ya procesados
+            const state = stateManager.readState();
+            const pedidosNuevos = this.filterNewPedidos(pedidosDB, state);
 
             if (pedidosNuevos.length === 0) {
-                console.log('✨ Todos los pedidos ya fueron procesados');
+                console.log('✨ Todos los pedidos de hoy ya fueron procesados');
                 return;
             }
 
-            console.log(`🆕 ${pedidosNuevos.length} pedidos para sincronizar`);
+            console.log(`🆕 ${pedidosNuevos.length} pedidos nuevos para sincronizar`);
 
-            // 4. Enviar pedidos
+            // 4. Transformar y enviar pedidos
             let successCount = 0;
-            for (const pedido of pedidosNuevos) {
+            let errorCount = 0;
+
+            for (const pedidoDB of pedidosNuevos) {
                 try {
+                    // Transformar a formato de API externa
+                    const { pedido, isValid, errors } = PedidoTransformer.transformAndValidate(pedidoDB);
+
+                    if (!isValid) {
+                        console.warn(`⚠️  Pedido ${pedidoDB.rowid} tiene errores de validación:`, errors);
+                        // Continuar de todas formas (puedes cambiar esto si prefieres saltarlo)
+                    }
+
+                    console.log(`📤 Enviando pedido ${pedidoDB.rowid}...`);
+                    console.log('JSON a enviar:', JSON.stringify(pedido, null, 2));
+
+                    // Enviar al endpoint
                     await this.httpClient.sendPedido(pedido);
 
-                    // Actualizar estado después de cada envío exitoso
+                    // Actualizar estado después de envío exitoso
                     stateManager.updateState({
-                        fecha: pedido.f430_fecha || new Date().toISOString(),
-                        id: pedido.f430_rowid || 0
+                        fecha: pedidoDB.fecha || new Date().toISOString(),
+                        id: pedidoDB.rowid || 0
                     });
 
                     successCount++;
+                    console.log(`✅ Pedido ${pedidoDB.rowid} enviado exitosamente`);
+
                 } catch (error) {
-                    console.error(`❌ Error enviando pedido ${pedido.f430_rowid}:`, error.message);
+                    errorCount++;
+                    console.error(`❌ Error enviando pedido ${pedidoDB.rowid}:`, error.message);
                     // Continuar con el siguiente pedido
                 }
             }
 
             const duration = Date.now() - startTime;
-            console.log(`✅ Sincronización completada: ${successCount}/${pedidosNuevos.length} pedidos enviados en ${duration}ms`);
+            console.log(`\n✅ Sincronización completada:`);
+            console.log(`   - Exitosos: ${successCount}/${pedidosNuevos.length}`);
+            console.log(`   - Errores: ${errorCount}`);
+            console.log(`   - Duración: ${duration}ms`);
 
         } catch (error) {
             console.error('❌ Error en sincronización:', error.message);
@@ -98,51 +120,19 @@ class PedidosSyncService {
     }
 
     /**
-     * Obtener pedidos nuevos desde la base de datos
-     * @param {string} fechaDesde - Fecha desde la cual buscar
-     * @returns {Promise<Array>} Array de pedidos
+     * Obtener rango de fechas (solo hoy - getday)
+     * @returns {Object} { fechaInicial, fechaFinal }
      */
-    async fetchNewPedidos(fechaDesde) {
-        const pool = await getPool();
-        const request = pool.request();
-        request.timeout = 120000;
+    getDateRange() {
+        const now = new Date();
 
-        const sql = require('mssql');
+        // Inicio del día (00:00:00)
+        const fechaInicial = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
 
-        const fechaInicial = new Date(fechaDesde);
-        const fechaFinal = new Date();
+        // Fin del día (23:59:59)
+        const fechaFinal = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59);
 
-        request.input('fechaInicial', sql.DateTime, fechaInicial);
-        request.input('fechaFinal', sql.DateTime, fechaFinal);
-
-        const query = `
-      EXEC sp_pv_cons_pedido 
-        @p_cia = 1,
-        @p_co = N'',
-        @p_tipo_docto = N'',
-        @p_usuario = N'',
-        @p_ind_usuario = 1,
-        @p_rowid_vend = 0,
-        @p_rowid_fact = 0,
-        @p_rowid_rem = 0,
-        @p_clase_docto = 0,
-        @p_fec_inicial = @fechaInicial,
-        @p_fec_final = @fechaFinal,
-        @p_ind_fecha = 7,
-        @p_num_inicial = 0,
-        @p_num_final = 0,
-        @p_ind_numero = 0,
-        @p_ind_estado = 0,
-        @p_ind_impresos = 0,
-        @p_ind_transmitidos = 0,
-        @p_ind_valorar_con = 1,
-        @p_cons_tipo = 10092,
-        @p_cons_nombre = N'<Predeterminado>',
-        @p_rowid_usuario = 1133
-    `;
-
-        const result = await request.query(query);
-        return result.recordset || [];
+        return { fechaInicial, fechaFinal };
     }
 
     /**
@@ -153,9 +143,9 @@ class PedidosSyncService {
      */
     filterNewPedidos(pedidos, state) {
         return pedidos.filter(pedido => {
-            const pedidoFecha = new Date(pedido.f430_fecha || pedido.fecha);
+            const pedidoFecha = new Date(pedido.fecha);
             const ultimaFecha = new Date(state.ultimaFecha);
-            const pedidoId = pedido.f430_rowid || pedido.id || 0;
+            const pedidoId = pedido.rowid || 0;
 
             // Incluir si la fecha es posterior O si la fecha es igual pero el ID es mayor
             return pedidoFecha > ultimaFecha ||

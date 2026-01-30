@@ -31,13 +31,16 @@ async function startServer() {
     const server = app.listen(port, () => {
       console.log(`🚀 Server running on port ${port}`);
 
-      // Iniciar job de sincronización de pedidos (solo si está habilitado)
+      // SINCRONIZACIÓN AUTOMÁTICA DESHABILITADA PARA PRUEBAS
+      // Descomentar cuando se quiera activar la sincronización automática
+      /*
       try {
         const pedidosSyncJob = require('./jobs/pedidos-sync.job');
         pedidosSyncJob.start();
       } catch (error) {
         console.warn('⚠️  No se pudo iniciar sync job:', error.message);
       }
+      */
     });
 
     // Manejo de errores del servidor

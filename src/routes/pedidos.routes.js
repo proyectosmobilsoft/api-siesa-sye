@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pedidosController = require('../controllers/pedidos.controller');
+const pedidosManualController = require('../controllers/pedidos-manual.controller');
 
 /**
  * @swagger
@@ -85,5 +86,115 @@ const pedidosController = require('../controllers/pedidos.controller');
  *                   example: "Error al obtener los pedidos"
  */
 router.get('/', pedidosController.getPedidos);
+
+/**
+ * @swagger
+ * /api/pedidos/preview:
+ *   post:
+ *     summary: Generar preview del JSON transformado sin enviarlo
+ *     description: Recibe un f_rowid, ejecuta los 3 SPs para obtener datos completos, transforma al formato JSON requerido y retorna el resultado sin enviarlo al endpoint externo. Útil para ver el JSON antes de enviarlo.
+ *     tags: [Pedidos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - f_rowid
+ *             properties:
+ *               f_rowid:
+ *                 type: integer
+ *                 description: ID del pedido (f_rowid)
+ *                 example: 257792
+ *     responses:
+ *       200:
+ *         description: Preview generado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pedidoOriginal:
+ *                       type: object
+ *                       description: Datos originales del pedido desde la BD
+ *                     pedidoTransformado:
+ *                       type: object
+ *                       description: JSON transformado listo para enviar
+ *                     validacion:
+ *                       type: object
+ *                       properties:
+ *                         isValid:
+ *                           type: boolean
+ *                         errors:
+ *                           type: array
+ *                           items:
+ *                             type: string
+ *       400:
+ *         description: f_rowid no proporcionado
+ *       404:
+ *         description: Pedido no encontrado
+ *       500:
+ *         description: Error interno del servidor
+ */
+router.post('/preview', pedidosManualController.previewPedido);
+
+/**
+ * @swagger
+ * /api/pedidos/send:
+ *   post:
+ *     summary: Enviar pedido al endpoint externo
+ *     description: Recibe un f_rowid, obtiene los datos completos, transforma al formato JSON y lo envía al endpoint configurado en SYNC_ENDPOINT_URL
+ *     tags: [Pedidos]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - f_rowid
+ *             properties:
+ *               f_rowid:
+ *                 type: integer
+ *                 description: ID del pedido (f_rowid)
+ *                 example: 257792
+ *     responses:
+ *       200:
+ *         description: Pedido enviado exitosamente
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 success:
+ *                   type: boolean
+ *                   example: true
+ *                 message:
+ *                   type: string
+ *                   example: "Pedido enviado exitosamente"
+ *                 data:
+ *                   type: object
+ *                   properties:
+ *                     pedido:
+ *                       type: object
+ *                       description: JSON enviado
+ *                     response:
+ *                       type: object
+ *                       description: Respuesta del endpoint externo
+ *       400:
+ *         description: f_rowid no proporcionado o pedido inválido
+ *       404:
+ *         description: Pedido no encontrado
+ *       500:
+ *         description: Error interno del servidor o SYNC_ENDPOINT_URL no configurado
+ */
+router.post('/send', pedidosManualController.sendPedido);
 
 module.exports = router;
