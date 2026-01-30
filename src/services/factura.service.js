@@ -73,14 +73,6 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null, idCo = '0
     DECLARE @FechaActual DATETIME = GETDATE();
   `;
 
-  // Agregar declaraciones de variables solo si hay valores
-  if (idCoValue) {
-    request.input('idCoParam', sql.Char(3), idCoValue);
-    query += `\n    DECLARE @IdCoParam NVARCHAR(3) = @idCoParam;`;
-  } else {
-    query += `\n    DECLARE @IdCoParam NVARCHAR(3) = NULL;`;
-  }
-
   if (idTerceroValue) {
     request.input('idTerceroParam', sql.Int, idTerceroValue);
     query += `\n    DECLARE @RowIdTerceroParam INT = @idTerceroParam;`;
@@ -100,7 +92,7 @@ async function getFacturas(limit = 1000, offset = 0, idTercero = null, idCo = '0
       @plancriterio = NULL,
       @idmayor = NULL,
       @rowidvendedor = NULL,
-      @idco = @IdCoParam,
+      @idco = null,
       @idun = NULL,
       @idpais = NULL,
       @iddepto = NULL,
