@@ -83,12 +83,34 @@ async function procesarReciboCaja(params) {
     throw new Error(`Parámetros requeridos faltantes: ${missingParams.join(', ')}`);
   }
 
+  // Validar y procesar p_rowid_sa como array de objetos
+  if (!Array.isArray(params.p_rowid_sa) || params.p_rowid_sa.length === 0) {
+    throw new Error('p_rowid_sa debe ser un arreglo con al menos un elemento');
+  }
+
+  const saldosAbiertos = params.p_rowid_sa.map((item, index) => {
+    if (typeof item !== 'object' || item === null) {
+      throw new Error(`p_rowid_sa[${index}] debe ser un objeto con propiedades p_id y p_valor`);
+    }
+    const p_id = Number(item.p_id || item.p_rowid_sa);
+    const p_valor = Number(item.p_valor);
+    
+    if (Number.isNaN(p_id)) {
+      throw new Error(`p_rowid_sa[${index}].p_id debe ser un número válido`);
+    }
+    if (Number.isNaN(p_valor) || p_valor <= 0) {
+      throw new Error(`p_rowid_sa[${index}].p_valor debe ser un número válido mayor a 0`);
+    }
+    
+    return { p_id, p_valor };
+  });
+
   // Preparar valores para el script SQL
   const p_prefijo = params.p_prefijo || '';
   
   // Formatear fecha
   const fechaSQL = formatSQLDateTime(params.p_fecha);
-  
+
   const pool = await getPool();
   const request = pool.request();
   request.timeout = 180000; // 3 minutos para scripts complejos
@@ -123,7 +145,7 @@ async function procesarReciboCaja(params) {
     DECLARE @p_id_medio_pago NVARCHAR(10) = ${escapeSQLString(params.p_id_medio_pago)};
     DECLARE @p_id_cta_bancaria NVARCHAR(10) = ${escapeSQLString(params.p_id_cta_bancaria)};
     DECLARE @p_referencia_med NVARCHAR(50) = ${escapeSQLString(params.p_referencia_med)};
-    DECLARE @p_rowid_sa INT = ${params.p_rowid_sa}; --264651  ID DE SALDO ABIERTO
+    -- p_rowid_sa se procesa dinámicamente en los bloques dinámicos
 
 /* =====================================================
       VARIABLES DE CONTROL
@@ -134,6 +156,13 @@ async function procesarReciboCaja(params) {
         @v_periodo INT,
         @v_rowid_docto INT,
         @v_timestamp DATETIME;
+
+    /* =====================================================
+      VARIABLES PARA MOVIMIENTOS (usadas en bloques dinámicos)
+      ===================================================== */
+    DECLARE
+        @rowid_mov_cr INT,
+        @v_rowid_mov_cr INT;
 
     /* =====================================================
       OUTPUT VALIDACIÓN DOCTO
@@ -510,7 +539,7 @@ async function procesarReciboCaja(params) {
 
     IF @mv2_err <> 0 THROW 50011,'Error mov crédito',1;
 
-    DECLARE @rowid_mov_cr INT;
+    -- @rowid_mov_cr ya está declarada al inicio del script
 
     EXEC sp_mov_docto_insertar
         @id_cia=1,@rowid_docto=@v_rowid_docto,@id_un=@p_id_un,
@@ -526,69 +555,13 @@ async function procesarReciboCaja(params) {
         @p_rowid_sesion=365008;
 
       --------------------------------------------------
-    -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO)
+    -- DECLARAR VARIABLES PARA PROCESAMIENTO DE SALDOS ABIERTOS
     --------------------------------------------------
     DECLARE 
         @v_error_sa INT,
         @v_desc_error_sa NVARCHAR(255);
 
-    EXEC sp_sa_cancelar
-        @rowidsa = @p_rowid_sa,                 -- 264651 (obtenido previamente)
-        @fecha = @p_fecha,
-        @total_db = 0,
-        @total_cr = 0,
-        @total_db_alt = 0,
-        @total_cr_alt = 0,
-        @total_db_pendientes = 0,
-        @total_cr_pendientes = @p_valor,
-        @total_db_alt_pendientes = 0,
-        @total_cr_alt_pendientes = 0,
-        @chequesposfechados = 0,
-        @p_total_db2_pendientes = 0,
-        @p_total_cr2_pendientes = @p_valor,
-        @p_total_db2_alt_pendientes = 0,
-        @p_total_cr2_alt_pendientes = 0,
-        @p_rowid_docto_contable = @v_rowid_docto,
-        @p_error = @v_error_sa OUTPUT,
-        @p_desc_error = @v_desc_error_sa OUTPUT;
-
-    IF @v_error_sa <> 0 
-        THROW 60020, @v_desc_error_sa, 1;
-
-
-      --------------------------------------------------
-    -- MOVIMIENTO SALDO ABIERTO (DESPUÉS DE sp_sa_cancelar)
-    --------------------------------------------------
-
-    EXEC sp_mov_saldo_abierto_insertar
-        @id_cia = @p_cia,
-        @rowid_mov_docto = @rowid_mov_cr,       --?? MOVIMIENTO CR
-        @rowid_docto = @v_rowid_docto,          --906742
-        @rowid_sa = @p_rowid_sa,                --264651
-        @fecha = @p_fecha,
-        @ind_estado = 0,
-        @valor_db = 0,
-        @valor_cr = @p_valor,
-        @valor_db_alt = 0,
-        @valor_cr_alt = 0,
-        @rowid_vend = @p_rowid_cobrador,        --74
-        @id_sucursal = N'001',
-        @prefijo_cruce = NULL,
-        @id_tipo_docto_cruce = N'BQE',
-        @consec_docto_cruce = 26024,
-        @nro_cuota_cruce = 0,
-        @notas = @p_notas,
-        @valor_aplicado_pp = 0,
-        @valor_aplicado_pp_alt = 0,
-        @valor_aprovecha = 0,
-        @valor_aprovecha_alt = 0,
-        @valor_retenciones = 0,
-        @valor_retenciones_alt = 0,
-        @p_rowid_pe_prov_cuenta = NULL,
-        @p_valor_db2 = 0,
-        @p_valor_cr2 = @p_valor,
-        @p_valor_db2_alt = 0,
-        @p_valor_cr2_alt = 0;
+__SA_BLOCKS__
 
 
       EXEC sp_rel_med_pag_actual_movto
@@ -859,7 +832,7 @@ EXEC sp_mov_docto_insertar
 
 		------------------MOVIMIENTO CRÉDITO (TERCERO)-----------------------
 
-		DECLARE @v_rowid_mov_cr INT;
+		-- @v_rowid_mov_cr ya está declarada al inicio del script
 
 		EXEC sp_mov_docto_insertar
 			@id_cia = @p_cia,
@@ -891,66 +864,14 @@ EXEC sp_mov_docto_insertar
 
 
 
--------------------CANCELAR SALDO ABIERTO-----------------------
+      --------------------------------------------------
+    -- DECLARAR VARIABLES PARA PROCESAMIENTO DE SALDOS ABIERTOS (APROBAR)
+    --------------------------------------------------
+    DECLARE 
+        @v_err_sa INT,
+        @v_desc_sa NVARCHAR(255);
 
-DECLARE @v_err_sa INT, @v_desc_sa NVARCHAR(255);
-
-EXEC sp_sa_cancelar
-    @rowidsa = @p_rowid_sa,
-    @fecha = @p_fecha,
-    @total_db = 0,
-    @total_cr = 0,
-    @total_db_alt = 0,
-    @total_cr_alt = 0,
-    @total_db_pendientes = 0,
-    @total_cr_pendientes = @p_valor,
-    @total_db_alt_pendientes = 0,
-    @total_cr_alt_pendientes = 0,
-    @chequesposfechados = 0,
-    @p_total_db2_pendientes = 0,
-    @p_total_cr2_pendientes = @p_valor,
-    @p_total_db2_alt_pendientes = 0,
-    @p_total_cr2_alt_pendientes = 0,
-    @p_rowid_docto_contable = @v_rowid_docto,
-    @p_error = @v_err_sa OUTPUT,
-    @p_desc_error = @v_desc_sa OUTPUT;
-
-IF @v_err_sa <> 0
-    THROW 80001, @v_desc_sa, 1;
-
-
-
-
-	-----------------------------Aplicar saldo abierto--------------------------------------------
-	EXEC sp_mov_saldo_abierto_insertar
-    @id_cia = @p_cia,
-    @rowid_mov_docto = @v_rowid_mov_cr,
-    @rowid_docto = @v_rowid_docto,
-    @rowid_sa = @p_rowid_sa,
-    @fecha = @p_fecha,
-    @ind_estado = 0,
-    @valor_db = 0,
-    @valor_cr = @p_valor,
-    @valor_db_alt = 0,
-    @valor_cr_alt = 0,
-    @rowid_vend = @p_rowid_cobrador,
-    @id_sucursal = @p_id_co,
-    @prefijo_cruce = NULL,
-    @id_tipo_docto_cruce = N'BQE',
-    @consec_docto_cruce = 26024,
-    @nro_cuota_cruce = 0,
-    @notas = @p_notas,
-    @valor_aplicado_pp = 0,
-    @valor_aplicado_pp_alt = 0,
-    @valor_aprovecha = 0,
-    @valor_aprovecha_alt = 0,
-    @valor_retenciones = 0,
-    @valor_retenciones_alt = 0,
-    @p_rowid_pe_prov_cuenta = NULL,
-    @p_valor_db2 = 0,
-    @p_valor_cr2 = @p_valor,
-    @p_valor_db2_alt = 0,
-    @p_valor_cr2_alt = 0;
+__SA_BLOCKS_2__
 
 
 	-----------------------Recalcular totales DB / CR del documento-------------------------------
@@ -1183,9 +1104,280 @@ IF @v_err_fact <> 0
 
 `;
   
+  // Generar templates para los bloques dinámicos de saldos abiertos
+  const saBlockTemplate1 = `
+      --------------------------------------------------
+    -- CANCELACIÓN SALDO ABIERTO (DESPUÉS DEL CRÉDITO) - RowID SA: __ROWID_SA__, Valor: __VALOR_SA__
+    --------------------------------------------------
+
+    EXEC sp_sa_cancelar
+        @rowidsa = __ROWID_SA__,
+        @fecha = @p_fecha,
+        @total_db = 0,
+        @total_cr = 0,
+        @total_db_alt = 0,
+        @total_cr_alt = 0,
+        @total_db_pendientes = 0,
+        @total_cr_pendientes = __VALOR_SA__,
+        @total_db_alt_pendientes = 0,
+        @total_cr_alt_pendientes = 0,
+        @chequesposfechados = 0,
+        @p_total_db2_pendientes = 0,
+        @p_total_cr2_pendientes = __VALOR_SA__,
+        @p_total_db2_alt_pendientes = 0,
+        @p_total_cr2_alt_pendientes = 0,
+        @p_rowid_docto_contable = @v_rowid_docto,
+        @p_error = @v_error_sa OUTPUT,
+        @p_desc_error = @v_desc_error_sa OUTPUT;
+
+    IF @v_error_sa <> 0 
+        THROW 60020, @v_desc_error_sa, 1;
+
+
+      --------------------------------------------------
+    -- MOVIMIENTO SALDO ABIERTO (DESPUÉS DE sp_sa_cancelar) - RowID SA: __ROWID_SA__, Valor: __VALOR_SA__
+    --------------------------------------------------
+    
+    EXEC sp_mov_saldo_abierto_insertar
+        @id_cia = @p_cia,
+        @rowid_mov_docto = @rowid_mov_cr,
+        @rowid_docto = @v_rowid_docto,
+        @rowid_sa = __ROWID_SA__,
+        @fecha = @p_fecha,
+        @ind_estado = 0,
+        @valor_db = 0,
+        @valor_cr = __VALOR_SA__,
+        @valor_db_alt = 0,
+        @valor_cr_alt = 0,
+        @rowid_vend = @p_rowid_cobrador,
+        @id_sucursal = N'001',
+        @prefijo_cruce = NULL,
+        @id_tipo_docto_cruce = N'BQE',
+        @consec_docto_cruce = 26024,
+        @nro_cuota_cruce = 0,
+        @notas = @p_notas,
+        @valor_aplicado_pp = 0,
+        @valor_aplicado_pp_alt = 0,
+        @valor_aprovecha = 0,
+        @valor_aprovecha_alt = 0,
+        @valor_retenciones = 0,
+        @valor_retenciones_alt = 0,
+        @p_rowid_pe_prov_cuenta = NULL,
+        @p_valor_db2 = 0,
+        @p_valor_cr2 = __VALOR_SA__,
+        @p_valor_db2_alt = 0,
+        @p_valor_cr2_alt = 0;
+`;
+
+  const saBlockTemplate2 = `
+-------------------CANCELAR SALDO ABIERTO (APROBAR) - RowID SA: __ROWID_SA__, Valor: __VALOR_SA__-----------------------
+
+EXEC sp_sa_cancelar
+    @rowidsa = __ROWID_SA__,
+    @fecha = @p_fecha,
+    @total_db = 0,
+    @total_cr = 0,
+    @total_db_alt = 0,
+    @total_cr_alt = 0,
+    @total_db_pendientes = 0,
+    @total_cr_pendientes = __VALOR_SA__,
+    @total_db_alt_pendientes = 0,
+    @total_cr_alt_pendientes = 0,
+    @chequesposfechados = 0,
+    @p_total_db2_pendientes = 0,
+    @p_total_cr2_pendientes = __VALOR_SA__,
+    @p_total_db2_alt_pendientes = 0,
+    @p_total_cr2_alt_pendientes = 0,
+    @p_rowid_docto_contable = @v_rowid_docto,
+    @p_error = @v_err_sa OUTPUT,
+    @p_desc_error = @v_desc_sa OUTPUT;
+
+IF @v_err_sa <> 0
+    THROW 80001, @v_desc_sa, 1;
+
+
+
+	-----------------------------Aplicar saldo abierto (APROBAR) - RowID SA: __ROWID_SA__, Valor: __VALOR_SA__--------------------------------------------
+	EXEC sp_mov_saldo_abierto_insertar
+    @id_cia = @p_cia,
+    @rowid_mov_docto = @v_rowid_mov_cr,
+    @rowid_docto = @v_rowid_docto,
+    @rowid_sa = __ROWID_SA__,
+    @fecha = @p_fecha,
+    @ind_estado = 0,
+    @valor_db = 0,
+    @valor_cr = __VALOR_SA__,
+    @valor_db_alt = 0,
+    @valor_cr_alt = 0,
+    @rowid_vend = @p_rowid_cobrador,
+    @id_sucursal = @p_id_co,
+    @prefijo_cruce = NULL,
+    @id_tipo_docto_cruce = N'BQE',
+    @consec_docto_cruce = 26024,
+    @nro_cuota_cruce = 0,
+    @notas = @p_notas,
+    @valor_aplicado_pp = 0,
+    @valor_aplicado_pp_alt = 0,
+    @valor_aprovecha = 0,
+    @valor_aprovecha_alt = 0,
+    @valor_retenciones = 0,
+    @valor_retenciones_alt = 0,
+    @p_rowid_pe_prov_cuenta = NULL,
+    @p_valor_db2 = 0,
+    @p_valor_cr2 = __VALOR_SA__,
+    @p_valor_db2_alt = 0,
+    @p_valor_cr2_alt = 0;
+`;
+
+  // Generar bloques dinámicos para cada saldo abierto
+  const dynamicBlocks1 = saldosAbiertos
+    .map(sa => saBlockTemplate1
+      .replace(/__ROWID_SA__/g, String(sa.p_id))
+      .replace(/__VALOR_SA__/g, String(sa.p_valor))
+    )
+    .join('\n');
+
+  const dynamicBlocks2 = saldosAbiertos
+    .map(sa => saBlockTemplate2
+      .replace(/__ROWID_SA__/g, String(sa.p_id))
+      .replace(/__VALOR_SA__/g, String(sa.p_valor))
+    )
+    .join('\n');
+
+  // Verificar que los bloques dinámicos no contengan los marcadores de reemplazo
+  if (dynamicBlocks1.includes('__SA_BLOCKS__') || dynamicBlocks1.includes('__SA_BLOCKS_2__')) {
+    console.error('❌ Error: Los bloques dinámicos contienen marcadores de reemplazo');
+    throw new Error('Los bloques dinámicos no deben contener los marcadores __SA_BLOCKS__ o __SA_BLOCKS_2__');
+  }
+  if (dynamicBlocks2.includes('__SA_BLOCKS__') || dynamicBlocks2.includes('__SA_BLOCKS_2__')) {
+    console.error('❌ Error: Los bloques dinámicos contienen marcadores de reemplazo');
+    throw new Error('Los bloques dinámicos no deben contener los marcadores __SA_BLOCKS__ o __SA_BLOCKS_2__');
+  }
+
+  // Validar que los bloques no estén vacíos
+  if (!dynamicBlocks1 || dynamicBlocks1.trim() === '') {
+    throw new Error('Error generando bloques dinámicos de saldo abierto (bloque 1)');
+  }
+  if (!dynamicBlocks2 || dynamicBlocks2.trim() === '') {
+    throw new Error('Error generando bloques dinámicos de saldo abierto (bloque 2)');
+  }
+
+  // Reemplazar los marcadores en el script SQL
+  // IMPORTANTE: Buscar el marcador que está después de @v_error_sa (no el del comentario)
+  // Buscar desde después de la declaración de @v_error_sa para evitar el comentario
+  const vErrorSaIndex = sqlScript.indexOf('@v_error_sa INT');
+  const vDescErrorSaIndex = sqlScript.indexOf('@v_desc_error_sa NVARCHAR');
+  
+  // Buscar el marcador __SA_BLOCKS__ que está después de @v_desc_error_sa (el correcto)
+  // También verificar que está después de @rowid_mov_cr OUTPUT para asegurar que la variable ya fue asignada
+  const rowidMovCrOutputIndex = sqlScript.indexOf('@RowId=@rowid_mov_cr OUTPUT');
+  const searchStartIndex = Math.max(
+    vDescErrorSaIndex !== -1 ? vDescErrorSaIndex : 0,
+    rowidMovCrOutputIndex !== -1 ? rowidMovCrOutputIndex : 0
+  );
+  
+  let block1Index = -1;
+  if (searchStartIndex > 0) {
+    block1Index = sqlScript.indexOf('__SA_BLOCKS__', searchStartIndex);
+  } else {
+    block1Index = sqlScript.indexOf('__SA_BLOCKS__');
+  }
+  
+  const block2Index = sqlScript.indexOf('__SA_BLOCKS_2__');
+  
+  console.log('🔍 Buscando marcadores:', {
+    vErrorSaIndex,
+    vDescErrorSaIndex,
+    block1Index,
+    block2Index,
+    block1Found: block1Index !== -1,
+    block2Found: block2Index !== -1,
+    dynamicBlocks1Length: dynamicBlocks1.length,
+    dynamicBlocks2Length: dynamicBlocks2.length
+  });
+  
+  if (block1Index === -1 || block2Index === -1) {
+    throw new Error(`Marcadores no encontrados: __SA_BLOCKS__ (${block1Index === -1}), __SA_BLOCKS_2__ (${block2Index === -1})`);
+  }
+  
+  // Verificar que el marcador está en el lugar correcto (después de @v_error_sa y @v_desc_error_sa)
+  const contextBeforeBlock1 = sqlScript.substring(Math.max(0, block1Index - 200), block1Index);
+  const hasVErrorSa = contextBeforeBlock1.includes('@v_error_sa');
+  const hasVDescErrorSa = contextBeforeBlock1.includes('@v_desc_error_sa');
+  const hasRowidMovCr = contextBeforeBlock1.includes('@rowid_mov_cr OUTPUT') || contextBeforeBlock1.includes('@RowId=@rowid_mov_cr');
+  const hasVRowidDocto = contextBeforeBlock1.includes('@v_rowid_docto OUTPUT') || contextBeforeBlock1.includes('@p_rowid = @v_rowid_docto');
+  
+  console.log('🔍 Validando contexto del marcador __SA_BLOCKS__:', {
+    hasVErrorSa,
+    hasVDescErrorSa,
+    hasRowidMovCr,
+    hasVRowidDocto,
+    contextLength: contextBeforeBlock1.length
+  });
+  
+  if (!hasVErrorSa || !hasVDescErrorSa) {
+    console.error('❌ Error: El marcador __SA_BLOCKS__ no está en el contexto esperado');
+    console.error('Contexto antes del marcador (últimos 200 caracteres):', contextBeforeBlock1);
+    throw new Error('El marcador __SA_BLOCKS__ no está en el lugar correcto (debe estar después de @v_error_sa y @v_desc_error_sa)');
+  }
+  
+  if (!hasRowidMovCr || !hasVRowidDocto) {
+    console.warn('⚠️ Advertencia: Las variables @rowid_mov_cr o @v_rowid_docto no están en el contexto antes del marcador');
+    console.warn('Esto podría indicar que el marcador está en el lugar incorrecto');
+  }
+  
+  // Reemplazar solo la primera ocurrencia de cada marcador (la correcta)
+  let finalSqlScript = sqlScript.substring(0, block1Index) + 
+              dynamicBlocks1 + 
+              sqlScript.substring(block1Index + '__SA_BLOCKS__'.length);
+  
+  console.log('✅ Primer marcador reemplazado. Tamaño del script:', finalSqlScript.length);
+  
+  // Recalcular el índice del segundo bloque después del primer reemplazo
+  const block2IndexAfter = finalSqlScript.indexOf('__SA_BLOCKS_2__');
+  if (block2IndexAfter === -1) {
+    console.error('❌ Marcador __SA_BLOCKS_2__ no encontrado después del primer reemplazo');
+    throw new Error('Marcador __SA_BLOCKS_2__ no encontrado después del primer reemplazo');
+  }
+  
+  console.log('🔍 Segundo marcador encontrado en índice:', block2IndexAfter);
+  
+  finalSqlScript = finalSqlScript.substring(0, block2IndexAfter) + 
+              dynamicBlocks2 + 
+              finalSqlScript.substring(block2IndexAfter + '__SA_BLOCKS_2__'.length);
+  
+  console.log('✅ Segundo marcador reemplazado. Tamaño final del script:', finalSqlScript.length);
+  
+  // Verificar que los reemplazos se hicieron correctamente
+  const remainingBlock1 = (finalSqlScript.match(/__SA_BLOCKS__/g) || []).length;
+  const remainingBlock2 = (finalSqlScript.match(/__SA_BLOCKS_2__/g) || []).length;
+  
+  if (remainingBlock1 > 0 || remainingBlock2 > 0) {
+    console.error('❌ Error: Los marcadores no se reemplazaron correctamente');
+    console.error('Marcadores restantes:', {
+      remainingBlock1,
+      remainingBlock2
+    });
+    
+    if (remainingBlock1 > 0) {
+      const remainingIndex = finalSqlScript.indexOf('__SA_BLOCKS__');
+      console.error('Contexto del primer marcador __SA_BLOCKS__ restante:', 
+        finalSqlScript.substring(Math.max(0, remainingIndex - 50), remainingIndex + 100));
+    }
+    if (remainingBlock2 > 0) {
+      const remainingIndex = finalSqlScript.indexOf('__SA_BLOCKS_2__');
+      console.error('Contexto del primer marcador __SA_BLOCKS_2__ restante:', 
+        finalSqlScript.substring(Math.max(0, remainingIndex - 50), remainingIndex + 100));
+    }
+    
+    throw new Error(`Error: Quedaron marcadores sin reemplazar: __SA_BLOCKS__ (${remainingBlock1}), __SA_BLOCKS_2__ (${remainingBlock2})`);
+  }
+  
+  console.log(`✅ Bloques dinámicos generados: ${saldosAbiertos.length} saldos abiertos procesados`);
+  
   try {
-    console.log('🔄 Ejecutando script SQL para procesar recibo de caja...');
-    const result = await request.query(sqlScript);
+    console.log('🔄 Ejecutando script SQL para procesar recibo de caja con múltiples saldos abiertos...');
+    const result = await request.query(finalSqlScript);
     
     console.log('✅ Script SQL ejecutado exitosamente');
     

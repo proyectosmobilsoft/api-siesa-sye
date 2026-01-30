@@ -135,9 +135,11 @@ const reciboCajaController = require("../controllers/recibo-caja.controller");
  *           description: Referencia del medio de pago
  *           example: "20260114"
  *         p_rowid_sa:
- *           type: integer
- *           description: RowID SA
- *           example: 264651
+ *           type: array
+ *           description: Lista de saldos abiertos (RowID SA) a procesar
+ *           items:
+ *             type: integer
+ *           example: [264651, 264652]
  *     ReciboCajaResponse:
  *       type: object
  *       properties:
@@ -236,7 +238,7 @@ const reciboCajaController = require("../controllers/recibo-caja.controller");
  *             p_id_medio_pago: "CG1"
  *             p_id_cta_bancaria: "27"
  *             p_referencia_med: "20260114"
- *             p_rowid_sa: null
+ *             p_rowid_sa: [264651, 264652]
  *     responses:
  *       200:
  *         description: Recibo de caja procesado exitosamente
