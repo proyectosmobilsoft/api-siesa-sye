@@ -14,6 +14,7 @@ const localRoutes = require('./routes/local.routes');
 const reciboCajaRoutes = require('./routes/recibo-caja.routes');
 const ggoRoutes = require('./routes/ggo.routes');
 const pedidosRoutes = require('./routes/pedidos.routes');
+const syncRoutes = require('./routes/sync.routes');
 const { notFound, errorHandler } = require('./middlewares/errorHandler');
 const { setupSwagger } = require('./config/swagger');
 
@@ -166,6 +167,7 @@ app.use('/api/local', localRoutes);
 app.use('/api/recibo-caja', reciboCajaRoutes);
 app.use('/api/ggo', ggoRoutes);
 app.use('/api/pedidos', pedidosRoutes);
+app.use('/api/sync', syncRoutes);
 
 app.use(notFound);
 app.use(errorHandler);

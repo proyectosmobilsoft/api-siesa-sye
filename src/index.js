@@ -19,7 +19,7 @@ async function startServer() {
     // Conectar a ambas bases de datos
     await getPool();
     console.log('✅ Primary Database connected successfully');
-    
+
     // Intentar conectar a la segunda BD (opcional, solo si está configurada)
     try {
       await getPool2();
@@ -29,9 +29,35 @@ async function startServer() {
     }
 
     const server = app.listen(port, () => {
-      console.log(`🚀 Server running on port ${port}`);
+      console.log(`🚀 Servidor corriendo en http://localhost:${port}`);
+      console.log(`📘 Documentación disponible en http://localhost:${port}/api/docs`);
+      console.log(`🌍 Entorno: ${process.env.NODE_ENV || 'development'}`);
+
+      // Iniciar job de sincronización de pedidos
+      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
+      pedidosSyncJob.start();
     });
 
+    // Manejo de cierre graceful
+    process.on('SIGTERM', () => {
+      console.log('📛 SIGTERM recibido, cerrando servidor...');
+      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
+      pedidosSyncJob.stop();
+      server.close(() => {
+        console.log('✅ Servidor cerrado correctamente');
+        process.exit(0);
+      });
+    });
+
+    process.on('SIGINT', () => {
+      console.log('\n📛 SIGINT recibido, cerrando servidor...');
+      const pedidosSyncJob = require('./jobs/pedidos-sync.job');
+      pedidosSyncJob.stop();
+      server.close(() => {
+        console.log('✅ Servidor cerrado correctamente');
+        process.exit(0);
+      });
+    });
     // Manejo de errores del servidor
     server.on('error', (error) => {
       if (error.syscall !== 'listen') {
